@@ -15,7 +15,6 @@ class CocoEvaluator:
         assert isinstance(iou_types, (list, tuple))
         coco_gt = copy.deepcopy(coco_gt)
         self.coco_gt = coco_gt
-
         self.iou_types = iou_types
         self.coco_eval = {}
         for iou_type in iou_types:
@@ -154,8 +153,8 @@ def convert_to_xywh(boxes):
 
 
 def merge(img_ids, eval_imgs):
-    all_img_ids = utils.all_gather(img_ids)
-    all_eval_imgs = utils.all_gather(eval_imgs)
+    all_img_ids = utils2.all_gather(img_ids)
+    all_eval_imgs = utils2.all_gather(eval_imgs)
 
     merged_img_ids = []
     for p in all_img_ids:
