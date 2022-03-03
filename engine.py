@@ -86,6 +86,7 @@ def evaluate(model, data_loader, device):
     iou_types = _get_iou_types(model)
     coco_evaluator = CocoEvaluator(coco, iou_types)
 
+    eval_loss = 0
     for images, targets in metric_logger.log_every(data_loader, 220, header):
         images = list(img.to(device) for img in images)
 
@@ -103,6 +104,16 @@ def evaluate(model, data_loader, device):
         evaluator_time = time.time() - evaluator_time
         metric_logger.update(model_time=model_time, evaluator_time=evaluator_time)
 
+    model.train()
+    for images, targets in metric_logger.log_every(data_loader, 220, header):
+        images = list(img.to(device) for img in images)
+        targets = [{k: v.to(device) for k, v in t.items()} for t in targets]  # v.to(device)
+        with torch.no_grad():
+            loss_dict = model(images, targets)
+            losses = sum(loss for loss in loss_dict.values())
+            eval_loss += losses.item()
+    model.eval()
+
     # gather the stats from all processes
     metric_logger.synchronize_between_processes()
     print("Averaged stats:", metric_logger)
@@ -112,4 +123,5 @@ def evaluate(model, data_loader, device):
     coco_evaluator.accumulate()
     coco_evaluator.summarize()
     torch.set_num_threads(n_threads)
-    return coco_evaluator
+    eval_loss = eval_loss / len(data_loader)
+    return coco_evaluator, eval_loss
