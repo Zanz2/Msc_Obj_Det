@@ -5,30 +5,15 @@
 # Lets try to read one of the JSF files. Interpret them using this spec:
 #   https://www.edgetech.com/wp-content/uploads/2019/07/0023492_Rev_E.pdf
 
-# In[1]:
-
-
-#get_ipython().run_line_magic('load_ext', 'autoreload')
-#get_ipython().run_line_magic('autoreload', '2')
-#get_ipython().run_line_magic('matplotlib', 'inline')
 
 import os
 import sys
 from urllib.parse import unquote
-import copy
-
-#%pip install opencv-python
-
 import cv2
-
-from tqdm import tqdm
-
 from PIL import Image
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-import matplotlib
-
 import torch
 import torchvision
 import albumentations as A
@@ -75,7 +60,7 @@ class SonarDataset(torch.utils.data.Dataset):
 
         self.imgs = [s for s in os.listdir(root) if s.endswith('.png')]
 
-        #self.imgs = self.imgs[0:int(len(self.imgs)*0.1)] # MAKE IT FAST FOR DEBUGGING TODO remove this urgently lol
+        #self.imgs = self.imgs[0:int(len(self.imgs)*0.01)] # MAKE IT FAST FOR DEBUGGING TODO remove this urgently lol
 
         csv_boxes = pd.read_csv(csv_file)
 
@@ -165,7 +150,9 @@ class SonarDataset(torch.utils.data.Dataset):
         # get bounding box coordinates for each mask
 
         img = np.transpose(img, [2, 0, 1])
+        img = img / 255  # 0 to 1 range
         img = torch.from_numpy(img)
+        img = img.float()
         img.to(device)
         return img, target
 
@@ -200,20 +187,10 @@ if __name__ == "__main__":
     prefix = "C:/Users/Moji podatki/Desktop/github/Msc_Obj_Det/conversions/vott_to_vgg_proj/"
     target = "empty_vgg_json.json"
     source = "source_vott_csv.csv"
-
     target_folder = "C:/Users/Moji podatki/Desktop/github/Msc_Obj_Det/data/vott/run3_big/input"
-
     csv_proj_file = "C:/Users/Moji podatki/Desktop/github/Msc_Obj_Det/data/vott/run3_big/output/vott-csv-export/06_02_2022_BIG-export.csv"
 
-
-    #vott_csv_to_vgg_proj_json(prefix+source,prefix+target)
-    #mirror_starboard_images_into_port(target_folder)
     info_dict = get_class_stats(csv_proj_file)
-    #pprint.pprint(info_dict)
-
-
-    # In[21]:
-
 
     # go over all the confirmed bodies
     vott_csv = pd.read_csv(csv_proj_file)
@@ -231,10 +208,6 @@ if __name__ == "__main__":
             print("{},{}".format(something["xmin"],something["ymin"]))
             im.show()
             #bla_bla = input("Press enter to continue")
-
-
-    # In[22]:
-
 
 
     plt.rcParams['figure.figsize'] = [12, 8]
@@ -315,9 +288,6 @@ if __name__ == "__main__":
     plt.xticks(rotation=90)
     ax.legend()
 
-    #ax.bar_label(rects1, padding=3)
-    #ax.bar_label(rects2, padding=3)
-
     fig.tight_layout()
 
     #plt.show()
@@ -335,7 +305,7 @@ if __name__ == "__main__":
         A.VerticalFlip(p=0.5),                             # if not just resize to support size
         A.RandomBrightnessContrast(p=0.25),
         A.RandomGamma(p=0.25),
-        A.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225), max_pixel_value=255.0), # can not visualize with this
+        #A.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225), max_pixel_value=255.0), # trying without imagenet norm, since images are not natural
     ], bbox_params=A.BboxParams(format='pascal_voc',label_fields=['class_labels']))
 
 
@@ -422,8 +392,6 @@ if __name__ == "__main__":
             debug_counter += 1
         return avg_loss_value/debug_counter
 
-
-
     # construct an optimizer
     params = [p for p in model.parameters() if p.requires_grad]
     optimizer = torch.optim.SGD(params, lr=0.005,
@@ -453,7 +421,6 @@ if __name__ == "__main__":
 
     #visualize_bbox(train_dataset.get_image(21), visualize_test_boxes, save=True)
 
-
     num_epochs = 50
 
     best_positive = 0
@@ -467,7 +434,7 @@ if __name__ == "__main__":
         # evaluate on the test dataset
         coco_eval_obj, stats = evaluate(model, dev_dataloader, device=device)
         val_loss = stats["val_loss"]
-        positives= stats["TP"]
+        positives = stats["TP"]
         falses = stats["FP"] + stats["FN"]
         if positives > best_positive and falses < best_false:
             print("Improvement, saved model!")
