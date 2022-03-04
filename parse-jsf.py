@@ -27,6 +27,7 @@ from PIL import Image
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib
 
 import torch
 import torchvision
@@ -47,8 +48,22 @@ from engine import evaluate
 device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
 #device = "cpu"
 
+def plot_loss(train_loss,val_loss):
+    plt.clf()
+    plt.plot(train_loss)
+    plt.plot(val_loss)
+    plt.savefig('LossPlot.png', bbox_inches='tight')
+
 def obj_collate_fn(batch):
     return tuple(zip(*batch))
+
+def visualize_bbox(image,bbox_list,save=False):
+    pic = image
+    for bbox in bbox_list:
+        pic = cv2.rectangle(pic, (int(bbox[0]), int(bbox[1])), (int(bbox[2]), int(bbox[3])), (255,0,0), 2)
+    if save: cv2.imwrite("bbox.png",pic)
+    cv2.imshow("bboxes visualized", pic)
+    cv2.waitKey(0) # this freezes and crashes for some reason
 
 class SonarDataset(torch.utils.data.Dataset):
     def __init__(self, root, csv_file, transforms):
@@ -59,6 +74,8 @@ class SonarDataset(torch.utils.data.Dataset):
         # that has the information of all the images included and the ones that have bounding boxes
 
         self.imgs = [s for s in os.listdir(root) if s.endswith('.png')]
+
+        #self.imgs = self.imgs[0:int(len(self.imgs)*0.1)] # MAKE IT FAST FOR DEBUGGING TODO remove this urgently lol
 
         csv_boxes = pd.read_csv(csv_file)
 
@@ -81,6 +98,12 @@ class SonarDataset(torch.utils.data.Dataset):
                 [asset["xmin"], asset["ymin"], asset["xmax"], asset["ymax"], self.label2id[asset["label"]]])
 
         self.img2boxes = img_name_to_box
+
+    def get_image(self, idx):
+        img_path = os.path.join(self.root, self.imgs[idx])
+        image = cv2.imread(img_path)
+        image = image.astype(np.uint8)
+        return image
 
     def __getitem__(self, idx):
         # load images and boxes
@@ -275,13 +298,12 @@ if __name__ == "__main__":
         c_anomaly += value["anomaly"]
 
 
-    print(labels)
     x = np.arange(len(labels))  # the label locations
-    width = 0.35  # the width of the bars
+    width = 0.25  # the width of the bars
 
     fig, ax = plt.subplots()
-    rects1 = ax.bar(x - width/4, bikes, width, label='Bikes')
-    rects2 = ax.bar(x + width/4, debris, width, label='Debris')
+    rects1 = ax.bar(x - width/2, bikes, width, label='Bikes')
+    rects2 = ax.bar(x + width/2, debris, width, label='Debris')
     rects3 = ax.bar(x - width/4, confirmed_body, width, label='Confirmed bodies')
     rects4 = ax.bar(x + width/4, anomaly, width, label='Anomalies')
 
@@ -298,7 +320,8 @@ if __name__ == "__main__":
 
     fig.tight_layout()
 
-    plt.show()
+    #plt.show()
+    plt.savefig('DatasetDistributions.png', bbox_inches='tight')
 
     print("Sum annotated bodies:{}, anomalies:{}, debris:{}, bikes:{}".format(c_cnf_body,c_anomaly,c_debris,c_bikes))
 
@@ -335,37 +358,23 @@ if __name__ == "__main__":
     print(train_dataset[21][1]["boxes"].shape)
     print("Number of images train:{}, dev:{}, test:{}".format(len(train_dataset),len(dev_dataset),len(test_dataset)))
 
-
     torch.backends.cudnn.benchmark = True # speeds up training by some variable amount
     num_classes = 5  # debris + bike + anomaly + confirmed_victim + background
 
     # load a model pre-trained on COCO
     model = torchvision.models.detection.fasterrcnn_resnet50_fpn(pretrained=True,pretrained_backbone=True)
 
-
     # get number of input features for the classifier
     in_features = model.roi_heads.box_predictor.cls_score.in_features
     # replace the pre-trained head with a new one
     model.roi_heads.box_predictor = FastRCNNPredictor(in_features, num_classes)
-
     model.to(device)
-
     print(device)
-    #output = model(images, targets)
-    # For inference
-    #model.eval()
-    #predictions = model(dev_images)
     print(torch.version.cuda)
-
-
-    # In[27]:
-
     torch.cuda.empty_cache()
-    print(torch.cuda.memory_summary(device))
 
     def train_one_epoch(model, optimizer, data_loader, device, epoch, scaler=None, print_every = 50):
         model.train()
-        header = f"Epoch: [{epoch}]"
 
         lr_scheduler = None
         if epoch == 0:
@@ -396,7 +405,7 @@ if __name__ == "__main__":
             avg_loss_value = avg_loss_value + loss_value
             if debug_counter != 0 and debug_counter % print_every == 0:
                 print_loss_value = avg_loss_value / debug_counter
-                print("Epoch {}, progress {}/{}, {} iter avg loss: {}".format(epoch, debug_counter,len(data_loader),print_every,print_loss_value))
+                #print("Training progress {}/{}, cumulative avg loss: {}".format(epoch, debug_counter,len(data_loader),print_every,print_loss_value))
 
             optimizer.zero_grad()
             if scaler is not None:
@@ -411,7 +420,7 @@ if __name__ == "__main__":
                 lr_scheduler.step()
 
             debug_counter += 1
-        return avg_loss_value
+        return avg_loss_value/debug_counter
 
 
 
@@ -433,20 +442,43 @@ if __name__ == "__main__":
     dev_dataloader = DataLoader(dev_dataset, batch_size=4,collate_fn=obj_collate_fn,pin_memory=True, shuffle=True,num_workers=1,drop_last=True)
     test_dataloader = DataLoader(test_dataset, batch_size=4,collate_fn=obj_collate_fn,pin_memory=True, shuffle=True,num_workers=1,drop_last=True)
 
-    # let's train it for 10 epochs
-    num_epochs = 70
+    visualize_test_boxes = [[621.2121, 231.6017, 699.1342, 300.8658],
+                  [505.4113, 751.0823, 596.3203, 808.4416],
+                  [428.5714, 616.8831, 484.8485, 636.3636],
+                  [444.8052, 216.4502, 531.3853, 239.1775],
+                  [215.3680, 361.4719, 258.6580, 397.1861]]
 
-    best_val_loss = 0
+    # keep in mind boxes returned from the dataset using the traditional indexing get item method are returned transformed,
+    # while images returned using get_image are not
+
+    #visualize_bbox(train_dataset.get_image(21), visualize_test_boxes, save=True)
+
+
+    num_epochs = 50
+
+    best_positive = 0
+    best_false = np.inf
+    train_loss_list = []
+    val_loss_list = []
     for epoch in range(num_epochs):
         train_loss = train_one_epoch(model, optimizer, train_dataloader, device, epoch,print_every=100)
         # update the learning rate
         lr_scheduler.step()
         # evaluate on the test dataset
-        _, val_loss = evaluate(model, dev_dataloader, device=device)
-        if val_loss > best_val_loss:
+        coco_eval_obj, stats = evaluate(model, dev_dataloader, device=device)
+        val_loss = stats["val_loss"]
+        positives= stats["TP"]
+        falses = stats["FP"] + stats["FN"]
+        if positives > best_positive and falses < best_false:
+            print("Improvement, saved model!")
             torch.save(model.state_dict(), "saved_model.pt")
-            best_val_loss = val_loss
-        print("{}# epoch of training done, Train loss: {}, Validation loss: {}".format(epoch,train_loss,val_loss))
+            best_positive = positives
+            best_false = falses
+        train_loss_list.append(train_loss)
+        val_loss_list.append(val_loss)
+        plot_loss(train_loss_list,val_loss_list)
+        print(stats)
+        print("{}# epoch done, Train loss: {}, Validation loss: {}".format(epoch+1,train_loss,val_loss))
 
     print("That's it!")
 
