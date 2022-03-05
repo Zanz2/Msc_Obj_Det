@@ -60,7 +60,7 @@ class SonarDataset(torch.utils.data.Dataset):
 
         self.imgs = [s for s in os.listdir(root) if s.endswith('.png')]
 
-        #self.imgs = self.imgs[0:int(len(self.imgs)*0.01)] # MAKE IT FAST FOR DEBUGGING TODO remove this urgently lol
+        #self.imgs = self.imgs[0:int(len(self.imgs)*0.1)] # MAKE IT FAST FOR DEBUGGING TODO remove this urgently lol
 
         csv_boxes = pd.read_csv(csv_file)
 
@@ -102,8 +102,6 @@ class SonarDataset(torch.utils.data.Dataset):
         if self.imgs[idx] in self.img2boxes:
             boxes = self.img2boxes[self.imgs[idx]]
 
-        num_objs = len(boxes)
-
         # convert everything into a torch.Tensor
         bboxes2 = []
         labels = []
@@ -126,6 +124,8 @@ class SonarDataset(torch.utils.data.Dataset):
         if self.transforms is not None:
             transformed = self.transforms(image=image, bboxes=bboxes2, class_labels=labels)
             img = transformed['image']
+            #visualize_bbox(img,[])
+            #sys.exit(0)
             target["boxes"] = []
             if len(transformed['bboxes']) > 0:
                 for bbox in transformed['bboxes']:
@@ -293,18 +293,16 @@ if __name__ == "__main__":
     #plt.show()
     plt.savefig('DatasetDistributions.png', bbox_inches='tight')
 
-    print("Sum annotated bodies:{}, anomalies:{}, debris:{}, bikes:{}".format(c_cnf_body,c_anomaly,c_debris,c_bikes))
-
-
     #The input to the model is expected to be a list of tensors,
     #each of shape [C, H, W], one for each image, and should be in 0-1 range.
     #Different images can have different sizes.
 
     sonar_transform = A.Compose([ #rotations, strecthing, different intensities probably safe
-        A.RandomCrop(width=1000, height=350), # TODO: figure out of this works, because the model isnt trained on this input
+        A.RandomCrop(width=400, height=400), # TODO: figure out of this works, because the model isnt trained on this input
         A.VerticalFlip(p=0.5),                             # if not just resize to support size
-        A.RandomBrightnessContrast(p=0.25),
-        A.RandomGamma(p=0.25),
+        A.RandomBrightnessContrast(p=0.3),
+        A.RandomGamma(p=0.3),
+        A.Equalize(p=1),
         #A.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225), max_pixel_value=255.0), # trying without imagenet norm, since images are not natural
     ], bbox_params=A.BboxParams(format='pascal_voc',label_fields=['class_labels']))
 
@@ -313,8 +311,8 @@ if __name__ == "__main__":
     output_folder = "C:/Users/Moji podatki/Desktop/github/Msc_Obj_Det/data/vott/run3_big/output/vott-csv-export/"
     csv_file = output_folder+"06_02_2022_BIG-export.csv"
     train = output_folder+"train"
-    dev = output_folder+"dev"
-    test = output_folder+"test"
+    test = output_folder+"dev" # switched temporarily because /test has more files for evaluation
+    dev = output_folder+"test"
 
     train_dataset = SonarDataset(train,csv_file,sonar_transform)
     dev_dataset = SonarDataset(dev,csv_file,sonar_transform)
@@ -322,25 +320,27 @@ if __name__ == "__main__":
 
     #visualize(train_dataset[0][0])
     #[x1, y1, x2, y2] format, with 0 <= x1 < x2 <= W and 0 <= y1 < y2 <= H.
+    print("Sum annotated bodies:{}, anomalies:{}, debris:{}, bikes:{}".format(c_cnf_body, c_anomaly, c_debris, c_bikes))
     print(train_dataset[21][0].shape)
     print(train_dataset[21][0].is_cuda)
     print(train_dataset[21][1])
     print(train_dataset[21][1]["boxes"].shape)
     print("Number of images train:{}, dev:{}, test:{}".format(len(train_dataset),len(dev_dataset),len(test_dataset)))
+    print(device)
+    print(torch.version.cuda)
 
     torch.backends.cudnn.benchmark = True # speeds up training by some variable amount
     num_classes = 5  # debris + bike + anomaly + confirmed_victim + background
 
     # load a model pre-trained on COCO
-    model = torchvision.models.detection.fasterrcnn_resnet50_fpn(pretrained=True,pretrained_backbone=True)
+    model = torchvision.models.detection.fasterrcnn_resnet50_fpn(pretrained=True,pretrained_backbone=False)
+    # only pretrained on coco 2017, if pretrained_backbone = True, then it also uses a backbone pretrained on imagenet
 
     # get number of input features for the classifier
     in_features = model.roi_heads.box_predictor.cls_score.in_features
     # replace the pre-trained head with a new one
     model.roi_heads.box_predictor = FastRCNNPredictor(in_features, num_classes)
     model.to(device)
-    print(device)
-    print(torch.version.cuda)
     torch.cuda.empty_cache()
 
     def train_one_epoch(model, optimizer, data_loader, device, epoch, scaler=None, print_every = 50):
@@ -375,7 +375,7 @@ if __name__ == "__main__":
             avg_loss_value = avg_loss_value + loss_value
             if debug_counter != 0 and debug_counter % print_every == 0:
                 print_loss_value = avg_loss_value / debug_counter
-                #print("Training progress {}/{}, cumulative avg loss: {}".format(epoch, debug_counter,len(data_loader),print_every,print_loss_value))
+                print("Training progress {}/{}, cumulative avg loss: {}".format(debug_counter,len(data_loader),print_loss_value))
 
             optimizer.zero_grad()
             if scaler is not None:
@@ -428,7 +428,7 @@ if __name__ == "__main__":
     train_loss_list = []
     val_loss_list = []
     for epoch in range(num_epochs):
-        train_loss = train_one_epoch(model, optimizer, train_dataloader, device, epoch,print_every=100)
+        train_loss = train_one_epoch(model, optimizer, train_dataloader, device, epoch,print_every=300)
         # update the learning rate
         lr_scheduler.step()
         # evaluate on the test dataset

@@ -170,44 +170,43 @@ def evaluate(model, data_loader, device):
             if len(proposed_detections["scores"]) < MAX_DET: # if it made less predictions than our max, use how many it made
                 MAX_DET = len(proposed_detections["scores"])
             for index in range(MAX_DET):
-                score = proposed_detections["scores"][index]
-                print(score)
                 box = proposed_detections["boxes"][index]
                 label = proposed_detections["labels"][index]
-
                 for gt_target in targets:
-                    if image_id != gt_target["image_id"]: continue
-                    for gt_index in range(len(gt_target["boxes"])):
-                        gt_box = gt_target["boxes"][gt_index]
-                        gt_label = gt_target["labels"][gt_index]
-                        bb_gt = {
-                            'x1': gt_box[0],
-                            'x2': gt_box[2],
-                            'y1': gt_box[1],
-                            'y2': gt_box[3]
-                        }
-                        bb_pred = {
-                            'x1': box[0],
-                            'x2': box[2],
-                            'y1': box[1],
-                            'y2': box[3]
-                        }
-                        iou_val = get_iou(bb_gt,bb_pred)
-                        print("---------------------")
-                        print(image_id)
-                        print(iou_val)
-                        print(bb_gt)
-                        print(bb_pred)
-                        print("---------------------")
-                        if iou_val > IOU_TRESHOLD:
-                            if label == gt_label:
-                                true_positives += 1
-                            if label != gt_label:
-                                missclassifications += 1
-                        elif iou_val != 0:
-                            false_positives += 1
-                        else:
-                            false_negatives += 1
+                    #print("Proposal on IMG:{}, GT IMG: {}".format(image_id,gt_target["image_id"].item()))
+                    if image_id == gt_target["image_id"].item():
+                        for gt_index in range(len(gt_target["boxes"])):
+                            gt_box = gt_target["boxes"][gt_index]
+                            gt_label = gt_target["labels"][gt_index]
+                            bb_gt = {
+                                'x1': gt_box[0],
+                                'x2': gt_box[2],
+                                'y1': gt_box[1],
+                                'y2': gt_box[3]
+                            }
+                            bb_pred = {
+                                'x1': box[0],
+                                'x2': box[2],
+                                'y1': box[1],
+                                'y2': box[3]
+                            }
+                            iou_val = get_iou(bb_gt,bb_pred)
+                            print("---------------------")
+                            print("Image ID: {}".format(image_id))
+                            print("predicted label {} this is gt label {}".format(label,gt_label))
+                            print("IOU value {}, gt box below, below that is pred box".format(iou_val))
+                            print(bb_gt)
+                            print(bb_pred)
+                            print("---------------------")
+                            if iou_val > IOU_TRESHOLD:
+                                if label == gt_label:
+                                    true_positives += 1
+                                if label != gt_label:
+                                    missclassifications += 1
+                            elif iou_val != 0:
+                                false_positives += 1
+                            else:
+                                false_negatives += 1
 
         evaluator_time = time.time()
         coco_evaluator.update(res)
