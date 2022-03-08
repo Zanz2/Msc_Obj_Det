@@ -20,6 +20,7 @@ import albumentations as A
 import random
 import math
 import time
+import utils2
 
 from torch import FloatTensor, LongTensor, nn, optim
 from torchvision import datasets, models
@@ -28,16 +29,21 @@ from torchvision.models.detection import FasterRCNN
 from torchvision.models.detection.faster_rcnn import FastRCNNPredictor
 from torch.utils.data import DataLoader
 
-from engine import evaluate
+from engine import evaluate,  train_one_epoch
 
 device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
 #device = "cpu"
 
-def plot_loss(train_loss,val_loss):
+def plot_x_y(train_loss,val_loss,mode="loss"):
     plt.clf()
-    plt.plot(train_loss)
-    plt.plot(val_loss)
-    plt.savefig('LossPlot.png', bbox_inches='tight')
+    if mode == "loss_plot":
+        plt.plot(train_loss)
+        plt.plot(val_loss)
+        plt.savefig("LossPlot.png", bbox_inches='tight')
+    if mode == "precision_recall_curve":
+        plt.plot(train_loss)
+        plt.plot(val_loss)
+        plt.savefig("PRCurve.png", bbox_inches='tight')
 
 def obj_collate_fn(batch):
     return tuple(zip(*batch))
@@ -60,7 +66,7 @@ class SonarDataset(torch.utils.data.Dataset):
 
         self.imgs = [s for s in os.listdir(root) if s.endswith('.png')]
 
-        #self.imgs = self.imgs[0:int(len(self.imgs)*0.1)] # MAKE IT FAST FOR DEBUGGING TODO remove this urgently lol
+        #self.imgs = self.imgs[0:int(len(self.imgs)*0.01)] # MAKE IT FAST FOR DEBUGGING
 
         csv_boxes = pd.read_csv(csv_file)
 
@@ -124,8 +130,10 @@ class SonarDataset(torch.utils.data.Dataset):
         if self.transforms is not None:
             transformed = self.transforms(image=image, bboxes=bboxes2, class_labels=labels)
             img = transformed['image']
-            #visualize_bbox(img,[])
+            #visualize_bbox(img,transformed["bboxes"])
             #sys.exit(0)
+            #print(transformed)
+
             target["boxes"] = []
             if len(transformed['bboxes']) > 0:
                 for bbox in transformed['bboxes']:
@@ -159,30 +167,30 @@ class SonarDataset(torch.utils.data.Dataset):
     def __len__(self):
         return len(self.imgs)
 
+def get_class_stats(vott_csv):
+    vott_csv = pd.read_csv(vott_csv)
+    coverage_dict = dict()
+    for index,something in vott_csv.iterrows():
+        real_name = unquote(something["image"])
+        part = real_name.split("_data_likely_containing_targets_")
+        part = part[0]
+        if "_data_likely_containing_targets_" not in real_name:
+            part = real_name.split("_training_image_")
+            part = part[0]
+            part = part.split("_")[:-1]
+            part = "_".join(part)
+        if part not in coverage_dict:
+            coverage_dict[part] = {
+                "bike" : 0,
+                "debris" : 0,
+                "confirmed_body": 0,
+                "anomaly": 0
+            }
+        coverage_dict[part][something["label"]] += 1
+    return coverage_dict
 
 if __name__ == "__main__":
 
-    def get_class_stats(vott_csv):
-        vott_csv = pd.read_csv(vott_csv)
-        coverage_dict = dict()
-        for index,something in vott_csv.iterrows():
-            real_name = unquote(something["image"])
-            part = real_name.split("_data_likely_containing_targets_")
-            part = part[0]
-            if "_data_likely_containing_targets_" not in real_name:
-                part = real_name.split("_training_image_")
-                part = part[0]
-                part = part.split("_")[:-1]
-                part = "_".join(part)
-            if part not in coverage_dict:
-                coverage_dict[part] = {
-                    "bike" : 0,
-                    "debris" : 0,
-                    "confirmed_body": 0,
-                    "anomaly": 0
-                }
-            coverage_dict[part][something["label"]] += 1
-        return coverage_dict
 
     prefix = "C:/Users/Moji podatki/Desktop/github/Msc_Obj_Det/conversions/vott_to_vgg_proj/"
     target = "empty_vgg_json.json"
@@ -208,7 +216,6 @@ if __name__ == "__main__":
             print("{},{}".format(something["xmin"],something["ymin"]))
             im.show()
             #bla_bla = input("Press enter to continue")
-
 
     plt.rcParams['figure.figsize'] = [12, 8]
     plt.rcParams['figure.dpi'] = 100
@@ -264,12 +271,10 @@ if __name__ == "__main__":
         confirmed_body[sample_index] += value["confirmed_body"]
         anomaly[sample_index] += value["anomaly"]
 
-
         c_bikes += value["bike"]
         c_debris += value["debris"]
         c_cnf_body += value["confirmed_body"]
         c_anomaly += value["anomaly"]
-
 
     x = np.arange(len(labels))  # the label locations
     width = 0.25  # the width of the bars
@@ -287,26 +292,17 @@ if __name__ == "__main__":
     ax.set_xticklabels(labels) # labels
     plt.xticks(rotation=90)
     ax.legend()
-
     fig.tight_layout()
-
     #plt.show()
     plt.savefig('DatasetDistributions.png', bbox_inches='tight')
 
-    #The input to the model is expected to be a list of tensors,
-    #each of shape [C, H, W], one for each image, and should be in 0-1 range.
-    #Different images can have different sizes.
-
-    sonar_transform = A.Compose([ #rotations, strecthing, different intensities probably safe
-        A.RandomCrop(width=400, height=400), # TODO: figure out of this works, because the model isnt trained on this input
-        A.VerticalFlip(p=0.5),                             # if not just resize to support size
-        A.RandomBrightnessContrast(p=0.3),
-        A.RandomGamma(p=0.3),
-        A.Equalize(p=1),
-        #A.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225), max_pixel_value=255.0), # trying without imagenet norm, since images are not natural
+    sonar_transform = A.Compose([ # strecthing, different intensities probably safe
+        A.RandomCrop(width=1000, height=350),
+        #A.VerticalFlip(p=0.5),
+        #A.RandomBrightnessContrast(p=0.35),
+        #A.RandomGamma(p=0.35),
+        #A.Equalize(p=1),
     ], bbox_params=A.BboxParams(format='pascal_voc',label_fields=['class_labels']))
-
-
 
     output_folder = "C:/Users/Moji podatki/Desktop/github/Msc_Obj_Det/data/vott/run3_big/output/vott-csv-export/"
     csv_file = output_folder+"06_02_2022_BIG-export.csv"
@@ -322,6 +318,7 @@ if __name__ == "__main__":
     #[x1, y1, x2, y2] format, with 0 <= x1 < x2 <= W and 0 <= y1 < y2 <= H.
     print("Sum annotated bodies:{}, anomalies:{}, debris:{}, bikes:{}".format(c_cnf_body, c_anomaly, c_debris, c_bikes))
     print(train_dataset[21][0].shape)
+    print("{} to {}".format(torch.min(train_dataset[21][0]),torch.max(train_dataset[21][0])))
     print(train_dataset[21][0].is_cuda)
     print(train_dataset[21][1])
     print(train_dataset[21][1]["boxes"].shape)
@@ -334,7 +331,7 @@ if __name__ == "__main__":
 
     # load a model pre-trained on COCO
     model = torchvision.models.detection.fasterrcnn_resnet50_fpn(pretrained=True,pretrained_backbone=False)
-    # only pretrained on coco 2017, if pretrained_backbone = True, then it also uses a backbone pretrained on imagenet
+    # only pretrained on coco 2017, if pretrained_backbone = True AND pretrained=False then it uses a backbone pretrained on imagenet
 
     # get number of input features for the classifier
     in_features = model.roi_heads.box_predictor.cls_score.in_features
@@ -343,72 +340,19 @@ if __name__ == "__main__":
     model.to(device)
     torch.cuda.empty_cache()
 
-    def train_one_epoch(model, optimizer, data_loader, device, epoch, scaler=None, print_every = 50):
-        model.train()
-
-        lr_scheduler = None
-        if epoch == 0:
-            warmup_factor = 1.0 / 1000
-            warmup_iters = min(1000, len(data_loader) - 1)
-
-            lr_scheduler = torch.optim.lr_scheduler.LinearLR(
-                optimizer, start_factor=warmup_factor, total_iters=warmup_iters
-            )
-
-        debug_counter = 0
-        avg_loss_value = 0
-        for images, targets in data_loader:
-            #if debug_counter == 3: break
-            images = list(image.to(device) for image in images)
-            targets = [{k: v.to(device) for k, v in t.items()} for t in targets] # v.to(device)
-
-            with torch.cuda.amp.autocast(enabled=scaler is not None):
-                loss_dict = model(images, targets)
-                losses = sum(loss for loss in loss_dict.values())
-
-            loss_value = losses.item()
-
-            if not math.isfinite(loss_value):
-                print(f"Loss is {loss_value}, stopping training")
-                sys.exit(1)
-
-            avg_loss_value = avg_loss_value + loss_value
-            if debug_counter != 0 and debug_counter % print_every == 0:
-                print_loss_value = avg_loss_value / debug_counter
-                print("Training progress {}/{}, cumulative avg loss: {}".format(debug_counter,len(data_loader),print_loss_value))
-
-            optimizer.zero_grad()
-            if scaler is not None:
-                scaler.scale(losses).backward()
-                scaler.step(optimizer)
-                scaler.update()
-            else:
-                losses.backward()
-                optimizer.step()
-
-            if lr_scheduler is not None:
-                lr_scheduler.step()
-
-            debug_counter += 1
-        return avg_loss_value/debug_counter
-
     # construct an optimizer
     params = [p for p in model.parameters() if p.requires_grad]
-    optimizer = torch.optim.SGD(params, lr=0.005,
-                                momentum=0.9, weight_decay=0.0005)
+    optimizer = torch.optim.Adam(params, lr=0.0001,amsgrad=True) # Trying ADAM here
+                               # momentum=0.9)
     # and a learning rate scheduler
-    lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer,
-                                                   step_size=3,
+    lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, # reduced step size, not using rn
+                                                   step_size=10,
                                                    gamma=0.1)
 
-    # max batch for memory is 8
-    # 0 workers= 1:14
-    # 1 workers= 1:09
-    # 2,3,4 = 1:10
-
-    train_dataloader = DataLoader(train_dataset, batch_size=8,collate_fn=obj_collate_fn,pin_memory=True, shuffle=True,num_workers=1,drop_last=True)
-    dev_dataloader = DataLoader(dev_dataset, batch_size=4,collate_fn=obj_collate_fn,pin_memory=True, shuffle=True,num_workers=1,drop_last=True)
-    test_dataloader = DataLoader(test_dataset, batch_size=4,collate_fn=obj_collate_fn,pin_memory=True, shuffle=True,num_workers=1,drop_last=True)
+    # max batch is 8 with pretrained
+    train_dataloader = DataLoader(train_dataset, batch_size=7,collate_fn=obj_collate_fn,pin_memory=True, shuffle=True, num_workers=1, drop_last=True)
+    dev_dataloader = DataLoader(dev_dataset, batch_size=4,collate_fn=obj_collate_fn,pin_memory=True, shuffle=True, num_workers=1, drop_last=True) # To make dev validation loss more stable with small sample sizes data augmentation can be used
+    test_dataloader = DataLoader(test_dataset, batch_size=4,collate_fn=obj_collate_fn,pin_memory=True, shuffle=True, num_workers=1, drop_last=True)
 
     visualize_test_boxes = [[621.2121, 231.6017, 699.1342, 300.8658],
                   [505.4113, 751.0823, 596.3203, 808.4416],
@@ -420,32 +364,41 @@ if __name__ == "__main__":
     # while images returned using get_image are not
 
     #visualize_bbox(train_dataset.get_image(21), visualize_test_boxes, save=True)
+    #sys.exit(0)
 
-    num_epochs = 50
+    num_epochs = 100
 
-    best_positive = 0
-    best_false = np.inf
+    best_eval_loss = 0
     train_loss_list = []
     val_loss_list = []
+    precision_list = []
+    recall_list = []
+    best_recall = 0
+    best_precision = 0
     for epoch in range(num_epochs):
-        train_loss = train_one_epoch(model, optimizer, train_dataloader, device, epoch,print_every=300)
+        logger,train_stats = train_one_epoch(model, optimizer, train_dataloader, device, epoch,print_every=250)
+        train_loss = train_stats["loss"]
         # update the learning rate
         lr_scheduler.step()
         # evaluate on the test dataset
-        coco_eval_obj, stats = evaluate(model, dev_dataloader, device=device)
-        val_loss = stats["val_loss"]
-        positives = stats["TP"]
-        falses = stats["FP"] + stats["FN"]
-        if positives > best_positive and falses < best_false:
-            print("Improvement, saved model!")
-            torch.save(model.state_dict(), "saved_model.pt")
-            best_positive = positives
-            best_false = falses
+        coco_eval_obj, eval_stats = evaluate(model, dev_dataloader, device=device)
+        val_loss = eval_stats["loss"]
+
         train_loss_list.append(train_loss)
         val_loss_list.append(val_loss)
-        plot_loss(train_loss_list,val_loss_list)
-        print(stats)
+        precision_list.append(eval_stats["precision"])
+        recall_list.append(eval_stats["recall"])
+        if eval_stats["recall"] >= best_recall and eval_stats["precision"] >= best_precision:
+            print("Improvement, saved model!")
+            torch.save(model.state_dict(), "saved_model.pt")
+            best_recall = eval_stats["recall"]
+            best_precision = eval_stats["precision"]
+
+        plot_x_y(train_loss_list, val_loss_list, mode="loss_plot")
+        plot_x_y(precision_list, recall_list, mode="precision_recall_curve")
+        print(eval_stats)
         print("{}# epoch done, Train loss: {}, Validation loss: {}".format(epoch+1,train_loss,val_loss))
+        print("---------------------------------------------------------------------")
 
     print("That's it!")
 
