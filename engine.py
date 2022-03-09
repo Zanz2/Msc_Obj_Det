@@ -4,6 +4,7 @@ import time
 
 import torch
 import torchvision.models.detection.mask_rcnn
+from torchvision.ops import nms
 import utils2
 from coco_eval import CocoEvaluator
 from coco_utils import get_coco_api_from_dataset
@@ -21,54 +22,71 @@ def get_loss(data_loader,model,device):
     model.eval()
     return eval_loss
 
-def custom_evaluate(res_dict,targets,current_dict,IOU_TRESHOLD = 0.5,SCORE_TRESHOLD = 0.5,MAX_NUM_DET=10):
-    for target in targets:
-        current_dict["gt_total"] += len(target["boxes"])
-        if len(res_dict.items()) == 0:
-            current_dict["FN"] += len(target["boxes"])
-    predicted_status = None
-    for image_id, proposed_detections in res_dict.items():
-        number_of_detections = torch.numel(proposed_detections["scores"])
-        if number_of_detections < MAX_NUM_DET:  # if it made less predictions than our max, use how many it made
-            MAX_DET = number_of_detections
+def custom_evaluate(res_dict,targets,current_dict,IOU_TRESHOLD = 0.5,SCORE_TRESHOLD = 0.5,MAX_NUM_DET=50):
+    for gt_target in targets:
+        dict_for_img = res_dict[gt_target["image_id"].item()]
+
+        gt_boxes = gt_target["boxes"].tolist()
+        gt_labels = gt_target["labels"].tolist()
+        current_dict["gt_total"] += len(gt_boxes)
+
+        pred_labels = dict_for_img["labels"].tolist()
+        pred_scores = dict_for_img["scores"]
+
+        pred_boxes_mask = nms(boxes=dict_for_img["boxes"], scores=dict_for_img["scores"], iou_threshold=0.5)
+        pred_boxes = dict_for_img["boxes"][pred_boxes_mask].tolist()
+        pred_scores = pred_scores[pred_boxes_mask].tolist()
+
+        num_predictions = len(pred_boxes)
+
+        if num_predictions == 0:
+            current_dict["FN"] += len(gt_boxes)
+            continue
+
+        if num_predictions < MAX_NUM_DET:  # if it made less predictions than our max, use how many it made
+            MAX_DET = num_predictions
         else:
             MAX_DET = MAX_NUM_DET
-        if MAX_DET == 0:
-            predicted_status = "TN"
-            for gt_target in targets:
-                if image_id == gt_target["image_id"].item() and len(gt_target["boxes"]) > 0: predicted_status = "FN"
-
+        total_pred = 0
         for index in range(MAX_DET):
-            if proposed_detections["scores"][index].item() < SCORE_TRESHOLD: continue # ignore predictions below score
-            box = proposed_detections["boxes"][index]
-            label = proposed_detections["labels"][index]
-            current_dict["pred_total_b_d_cb_a"][label.item()] += 1
-            for gt_target in targets:
-                if image_id != gt_target["image_id"].item(): continue
-                most_matching_box = None
-                best_IOU = 0
-                predicted_status = "FP"
-                for gt_index in range(len(gt_target["boxes"])):
-                    gt_box = gt_target["boxes"][gt_index]
-                    gt_label = gt_target["labels"][gt_index]
-                    bb_gt = {
-                        'x1': gt_box[0],'x2': gt_box[2],'y1': gt_box[1],'y2': gt_box[3]
-                    }
-                    bb_pred = {
-                        'x1': box[0],'x2': box[2],'y1': box[1],'y2': box[3]
-                    }
-                    iou_val = get_iou(bb_gt, bb_pred)
-                    if iou_val > best_IOU:
-                        best_IOU = iou_val
-                        most_matching_box = bb_pred
-                        if label == gt_label:
-                            predicted_status = "TP"
-                        if label != gt_label:
-                            predicted_status = "missclassifications"
-                if best_IOU < IOU_TRESHOLD:
-                    predicted_status = "FP"
+            if pred_scores[index] > SCORE_TRESHOLD:
+                current_dict["pred_total_b_d_cb_a"][pred_labels[index]] += 1
+                total_pred += 1
+        detected = False
+        used_indexes = []
+        for gt_index in range(len(gt_boxes)):
+            gt_box = gt_boxes[gt_index]
+            gt_label = gt_labels[gt_index]
+            best_IOU = 0
+            pred_label = ""
+            pred_index = None
+            for index in range(MAX_DET):
+                if pred_scores[index] < SCORE_TRESHOLD or index in used_indexes: continue
+                box = pred_boxes[index]
+                label = pred_labels[index]
 
-            if predicted_status is not None: current_dict[predicted_status] += 1
+                bb_gt = {
+                    'x1': gt_box[0], 'x2': gt_box[2], 'y1': gt_box[1], 'y2': gt_box[3]
+                }
+                bb_pred = {
+                    'x1': box[0], 'x2': box[2], 'y1': box[1], 'y2': box[3]
+                }
+                iou_val = get_iou(bb_gt, bb_pred)
+                if iou_val > best_IOU:
+                    best_IOU = iou_val
+                    pred_label = label
+                    pred_index = index
+            if best_IOU > IOU_TRESHOLD:
+                if pred_label != gt_label:
+                    current_dict["missclassifications"] += 1
+                    used_indexes.append(pred_index)
+                else:
+                    detected = True
+                    current_dict["TP"] += 1
+                    used_indexes.append(pred_index)
+            if not detected: current_dict["FN"] += 1
+        current_dict["FP"] += (total_pred - len(used_indexes))
+
     total = sum(current_dict["pred_total_b_d_cb_a"])
     if current_dict["TP"] != 0:
         accuracy = (current_dict["TP"] + current_dict["TN"])/total

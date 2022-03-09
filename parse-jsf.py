@@ -39,10 +39,12 @@ def plot_x_y(train_loss,val_loss,mode="loss"):
     if mode == "loss_plot":
         plt.plot(train_loss)
         plt.plot(val_loss)
+        plt.title("Train is blue, eval is orange")
         plt.savefig("LossPlot.png", bbox_inches='tight')
     if mode == "precision_recall_curve":
         plt.plot(train_loss)
         plt.plot(val_loss)
+        plt.title("Precision is blue, recall is orange")
         plt.savefig("PRCurve.png", bbox_inches='tight')
 
 def obj_collate_fn(batch):
@@ -66,7 +68,7 @@ class SonarDataset(torch.utils.data.Dataset):
 
         self.imgs = [s for s in os.listdir(root) if s.endswith('.png')]
 
-        #self.imgs = self.imgs[0:int(len(self.imgs)*0.01)] # MAKE IT FAST FOR DEBUGGING
+        #self.imgs = self.imgs[0:int(len(self.imgs)*0.1)] # MAKE IT FAST FOR DEBUGGING
 
         csv_boxes = pd.read_csv(csv_file)
 
@@ -379,7 +381,7 @@ if __name__ == "__main__":
         logger,train_stats = train_one_epoch(model, optimizer, train_dataloader, device, epoch,print_every=250)
         train_loss = train_stats["loss"]
         # update the learning rate
-        lr_scheduler.step()
+        #lr_scheduler.step()
         # evaluate on the test dataset
         coco_eval_obj, eval_stats = evaluate(model, dev_dataloader, device=device)
         val_loss = eval_stats["loss"]
