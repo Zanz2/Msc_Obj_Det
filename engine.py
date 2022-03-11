@@ -83,6 +83,7 @@ def custom_evaluate(res_dict,targets,current_dict,IOU_TRESHOLD = 0.5,SCORE_TRESH
                     current_dict["missclassifications"] += 1
                 else:
                     current_dict["TP"] += 1
+                    current_dict["correct_total_b_d_cb_a"][label] += 0
                 detected = True
                 used_indexes.append(pred_index)
             if not detected: current_dict["FN"] += 1
@@ -113,6 +114,7 @@ def train_one_epoch(model, optimizer, data_loader, device, epoch, scaler=None, p
         "missclassifications": 0,
         "gt_total": 0,
         "pred_total_b_d_cb_a": [0, 0, 0, 0, 0],
+        "correct_total_b_d_cb_a": [0, 0, 0, 0, 0],
         "recall": 0,
         "precision": 0,
         "accuracy": 0
@@ -248,7 +250,8 @@ def evaluate(model, data_loader, device):
         "TN": 0,
         "missclassifications": 0,
         "gt_total": 0,
-        "pred_total_b_d_cb_a": [0,0,0,0,0],
+        "pred_total_b_d_cb_a": [0, 0, 0, 0, 0],
+        "correct_total_b_d_cb_a": [0, 0, 0, 0, 0],
         "recall": 0,
         "precision": 0,
         "accuracy": 0
@@ -282,6 +285,7 @@ def evaluate(model, data_loader, device):
     coco_evaluator.synchronize_between_processes()
 
     # accumulate predictions from all images
+    coco_evaluator.evaluate()
     coco_evaluator.accumulate()
     coco_evaluator.summarize()
     #coco_evaluator.coco_eval["bbox"].analyze()
