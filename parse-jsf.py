@@ -196,17 +196,17 @@ def get_class_stats(vott_csv):
     return coverage_dict
 
 if __name__ == "__main__":
-    prefix = "C:/Users/Moji podatki/Desktop/github/Msc_Obj_Det/conversions/vott_to_vgg_proj/"
-    target = "empty_vgg_json.json"
-    source = "source_vott_csv.csv"
-    target_folder = "C:/Users/Moji podatki/Desktop/github/Msc_Obj_Det/data/vott/run3_big/input"
-    csv_proj_file = "C:/Users/Moji podatki/Desktop/github/Msc_Obj_Det/data/vott/run3_big/output/vott-csv-export/06_02_2022_BIG-export.csv"
+    prefix1 = "C:/Users/zanza/Desktop/MSC_work/Msc_Obj_Det/"
+    target = "conversions/vott_to_vgg_proj/empty_vgg_json.json"
+    source = "conversions/vott_to_vgg_proj/source_vott_csv.csv"
+    target_folder = prefix1+"data/vott/run3_big/input"
+    csv_proj_file = prefix1+"data/vott/run3_big/output/vott-csv-export/06_02_2022_BIG-export.csv"
 
     info_dict = get_class_stats(csv_proj_file)
 
     # go over all the confirmed bodies
     vott_csv = pd.read_csv(csv_proj_file)
-    prefix = "C:/Users/Moji podatki/Desktop/github/Msc_Obj_Det/data/vott/run3_big/output/vott-csv-export/"
+    prefix = prefix1+"data/vott/run3_big/output/vott-csv-export/"
 
     you_want_to_do_this = False
     if you_want_to_do_this:
@@ -313,7 +313,7 @@ if __name__ == "__main__":
         # A.Equalize(p=1),
     ], bbox_params=A.BboxParams(format='pascal_voc', label_fields=['class_labels']))
 
-    output_folder = "C:/Users/Moji podatki/Desktop/github/Msc_Obj_Det/data/vott/run3_big/output/vott-csv-export/"
+    output_folder = prefix1+"data/vott/run3_big/output/vott-csv-export/"
     csv_file = output_folder+"06_02_2022_BIG-export.csv"
     train = output_folder+"train"
     test = output_folder+"dev" # switched temporarily because /test has more files for evaluation
