@@ -23,6 +23,9 @@ def get_loss(data_loader,model,device):
     return eval_loss
 
 def custom_evaluate(res_dict,targets,current_dict,IOU_TRESHOLD = 0.5,SCORE_TRESHOLD = 0.5,MAX_NUM_DET=50):
+    current_dict["iou_treshold"] = IOU_TRESHOLD
+    current_dict["confidence_treshold"] = SCORE_TRESHOLD
+    current_dict["max_num_det"] = MAX_NUM_DET
     for gt_target in targets:
         dict_for_img = res_dict[gt_target["image_id"].item()]
 
@@ -33,7 +36,7 @@ def custom_evaluate(res_dict,targets,current_dict,IOU_TRESHOLD = 0.5,SCORE_TRESH
         pred_labels = dict_for_img["labels"].tolist()
         pred_scores = dict_for_img["scores"]
 
-        pred_boxes_mask = nms(boxes=dict_for_img["boxes"], scores=dict_for_img["scores"], iou_threshold=0.5)
+        pred_boxes_mask = nms(boxes=dict_for_img["boxes"], scores=dict_for_img["scores"], iou_threshold=IOU_TRESHOLD)
         pred_boxes = dict_for_img["boxes"][pred_boxes_mask].tolist()
         pred_scores = pred_scores[pred_boxes_mask].tolist()
 
@@ -52,9 +55,9 @@ def custom_evaluate(res_dict,targets,current_dict,IOU_TRESHOLD = 0.5,SCORE_TRESH
             if pred_scores[index] > SCORE_TRESHOLD:
                 current_dict["pred_total_b_d_cb_a"][pred_labels[index]] += 1
                 total_pred += 1
-        detected = False
         used_indexes = []
         for gt_index in range(len(gt_boxes)):
+            detected = False
             gt_box = gt_boxes[gt_index]
             gt_label = gt_labels[gt_index]
             best_IOU = 0
@@ -64,7 +67,6 @@ def custom_evaluate(res_dict,targets,current_dict,IOU_TRESHOLD = 0.5,SCORE_TRESH
                 if pred_scores[index] < SCORE_TRESHOLD or index in used_indexes: continue
                 box = pred_boxes[index]
                 label = pred_labels[index]
-
                 bb_gt = {
                     'x1': gt_box[0], 'x2': gt_box[2], 'y1': gt_box[1], 'y2': gt_box[3]
                 }
@@ -79,11 +81,10 @@ def custom_evaluate(res_dict,targets,current_dict,IOU_TRESHOLD = 0.5,SCORE_TRESH
             if best_IOU > IOU_TRESHOLD:
                 if pred_label != gt_label:
                     current_dict["missclassifications"] += 1
-                    used_indexes.append(pred_index)
                 else:
-                    detected = True
                     current_dict["TP"] += 1
-                    used_indexes.append(pred_index)
+                detected = True
+                used_indexes.append(pred_index)
             if not detected: current_dict["FN"] += 1
         current_dict["FP"] += (total_pred - len(used_indexes))
 
@@ -98,7 +99,7 @@ def custom_evaluate(res_dict,targets,current_dict,IOU_TRESHOLD = 0.5,SCORE_TRESH
     return current_dict
 
 
-def train_one_epoch(model, optimizer, data_loader, device, epoch, scaler=None, print_every=50):
+def train_one_epoch(model, optimizer, data_loader, device, epoch, scaler=None, print_every=50,do_eval_metrics=False):
     model.train()
     metric_logger = utils2.MetricLogger(delimiter="  ")
     metric_logger.add_meter("lr", utils2.SmoothedValue(window_size=1, fmt="{value:.6f}"))
@@ -122,9 +123,9 @@ def train_one_epoch(model, optimizer, data_loader, device, epoch, scaler=None, p
         warmup_factor = 1.0 / 1000
         warmup_iters = min(1000, len(data_loader) - 1)
 
-        lr_scheduler = torch.optim.lr_scheduler.LinearLR(
-            optimizer, start_factor=warmup_factor, total_iters=warmup_iters
-        )
+        #lr_scheduler = torch.optim.lr_scheduler.LinearLR(
+        #    optimizer, start_factor=warmup_factor, total_iters=warmup_iters
+        #)
 
     img_counter = 0
     avg_loss_value = 0
@@ -165,44 +166,28 @@ def train_one_epoch(model, optimizer, data_loader, device, epoch, scaler=None, p
 
     cumulative_stats_dict["loss"] = avg_loss_value / img_counter
 
-    '''
-    print("Eval part of train")
-    cpu_device = torch.device("cpu")
-    model.eval()
-    metric_logger = utils2.MetricLogger(delimiter="  ")
-    header = "Making train print eval metrics:"
+    if do_eval_metrics:
+        print("Eval metrics of train set:")
+        cpu_device = torch.device("cpu")
+        model.eval()
+        coco = get_coco_api_from_dataset(data_loader.dataset)
+        iou_types = _get_iou_types(model)
+        coco_evaluator = CocoEvaluator(coco, iou_types)
+        for images, targets in data_loader:
+            images = list(img.to(device) for img in images)
+            if torch.cuda.is_available():
+                torch.cuda.synchronize()
+            outputs = model(images)
+            outputs = [{k: v.to(cpu_device) for k, v in t.items()} for t in outputs]
+            res = {target["image_id"].item(): output for target, output in zip(targets, outputs)}
+            cumulative_stats_dict = custom_evaluate(res, targets, cumulative_stats_dict)
+            coco_evaluator.update(res)
 
-    coco = get_coco_api_from_dataset(data_loader.dataset)
-    iou_types = _get_iou_types(model)
-    coco_evaluator = CocoEvaluator(coco, iou_types)
+        coco_evaluator.synchronize_between_processes()
+        # accumulate predictions from all images
+        coco_evaluator.accumulate()
+        coco_evaluator.summarize()
 
-    for images, targets in metric_logger.log_every(data_loader, 220, header):
-        images = list(img.to(device) for img in images)
-
-        if torch.cuda.is_available():
-            torch.cuda.synchronize()
-        model_time = time.time()
-        outputs = model(images)
-
-        outputs = [{k: v.to(cpu_device) for k, v in t.items()} for t in outputs]
-        model_time = time.time() - model_time
-
-        res = {target["image_id"].item(): output for target, output in zip(targets, outputs)}
-
-        evaluator_time = time.time()
-        coco_evaluator.update(res)
-        evaluator_time = time.time() - evaluator_time
-        metric_logger.update(model_time=model_time, evaluator_time=evaluator_time)
-
-    # gather the stats from all processes
-    metric_logger.synchronize_between_processes()
-    print("Averaged stats:", metric_logger)
-    coco_evaluator.synchronize_between_processes()
-
-    # accumulate predictions from all images
-    coco_evaluator.accumulate()
-    coco_evaluator.summarize()
-    '''
     return metric_logger, cumulative_stats_dict
 
 def get_iou(bb1, bb2):

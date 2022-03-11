@@ -46,6 +46,10 @@ def plot_x_y(train_loss,val_loss,mode="loss"):
         plt.plot(val_loss)
         plt.title("Precision is blue, recall is orange")
         plt.savefig("PRCurve.png", bbox_inches='tight')
+        plt.clf()
+        plt.plot(train_loss,val_loss)
+        plt.title("Precision is X, recall is Y")
+        plt.savefig("PRPlot.png", bbox_inches='tight')
 
 def obj_collate_fn(batch):
     return tuple(zip(*batch))
@@ -68,7 +72,7 @@ class SonarDataset(torch.utils.data.Dataset):
 
         self.imgs = [s for s in os.listdir(root) if s.endswith('.png')]
 
-        #self.imgs = self.imgs[0:int(len(self.imgs)*0.1)] # MAKE IT FAST FOR DEBUGGING
+        #self.imgs = self.imgs[0:int(len(self.imgs)*0.01)] # MAKE IT FAST FOR DEBUGGING
 
         csv_boxes = pd.read_csv(csv_file)
 
@@ -192,8 +196,6 @@ def get_class_stats(vott_csv):
     return coverage_dict
 
 if __name__ == "__main__":
-
-
     prefix = "C:/Users/Moji podatki/Desktop/github/Msc_Obj_Det/conversions/vott_to_vgg_proj/"
     target = "empty_vgg_json.json"
     source = "source_vott_csv.csv"
@@ -306,6 +308,11 @@ if __name__ == "__main__":
         #A.Equalize(p=1),
     ], bbox_params=A.BboxParams(format='pascal_voc',label_fields=['class_labels']))
 
+    sonar_eval_transform = A.Compose([  # strecthing, different intensities probably safe
+        A.RandomCrop(width=1000, height=350),
+        # A.Equalize(p=1),
+    ], bbox_params=A.BboxParams(format='pascal_voc', label_fields=['class_labels']))
+
     output_folder = "C:/Users/Moji podatki/Desktop/github/Msc_Obj_Det/data/vott/run3_big/output/vott-csv-export/"
     csv_file = output_folder+"06_02_2022_BIG-export.csv"
     train = output_folder+"train"
@@ -313,8 +320,8 @@ if __name__ == "__main__":
     dev = output_folder+"test"
 
     train_dataset = SonarDataset(train,csv_file,sonar_transform)
-    dev_dataset = SonarDataset(dev,csv_file,sonar_transform)
-    test_dataset = SonarDataset(test,csv_file,sonar_transform)
+    dev_dataset = SonarDataset(dev,csv_file,sonar_eval_transform)
+    test_dataset = SonarDataset(test,csv_file,sonar_eval_transform)
 
     #visualize(train_dataset[0][0])
     #[x1, y1, x2, y2] format, with 0 <= x1 < x2 <= W and 0 <= y1 < y2 <= H.
@@ -332,7 +339,7 @@ if __name__ == "__main__":
     num_classes = 5  # debris + bike + anomaly + confirmed_victim + background
 
     # load a model pre-trained on COCO
-    model = torchvision.models.detection.fasterrcnn_resnet50_fpn(pretrained=True,pretrained_backbone=False)
+    model = torchvision.models.detection.fasterrcnn_resnet50_fpn(pretrained=False,pretrained_backbone=False)
     # only pretrained on coco 2017, if pretrained_backbone = True AND pretrained=False then it uses a backbone pretrained on imagenet
 
     # get number of input features for the classifier
@@ -344,7 +351,7 @@ if __name__ == "__main__":
 
     # construct an optimizer
     params = [p for p in model.parameters() if p.requires_grad]
-    optimizer = torch.optim.Adam(params, lr=0.0001,amsgrad=True) # Trying ADAM here
+    optimizer = torch.optim.Adam(params, lr=0.00001,amsgrad=True) # Trying ADAM here
                                # momentum=0.9)
     # and a learning rate scheduler
     lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, # reduced step size, not using rn
@@ -352,7 +359,8 @@ if __name__ == "__main__":
                                                    gamma=0.1)
 
     # max batch is 8 with pretrained
-    train_dataloader = DataLoader(train_dataset, batch_size=7,collate_fn=obj_collate_fn,pin_memory=True, shuffle=True, num_workers=1, drop_last=True)
+    # max batch is 6 with non pretrained
+    train_dataloader = DataLoader(train_dataset, batch_size=6,collate_fn=obj_collate_fn,pin_memory=True, shuffle=True, num_workers=1, drop_last=True)
     dev_dataloader = DataLoader(dev_dataset, batch_size=4,collate_fn=obj_collate_fn,pin_memory=True, shuffle=True, num_workers=1, drop_last=True) # To make dev validation loss more stable with small sample sizes data augmentation can be used
     test_dataloader = DataLoader(test_dataset, batch_size=4,collate_fn=obj_collate_fn,pin_memory=True, shuffle=True, num_workers=1, drop_last=True)
 
@@ -377,9 +385,13 @@ if __name__ == "__main__":
     recall_list = []
     best_recall = 0
     best_precision = 0
+    do_train_eval_metrics = False
     for epoch in range(num_epochs):
-        logger,train_stats = train_one_epoch(model, optimizer, train_dataloader, device, epoch,print_every=250)
+        logger,train_stats = train_one_epoch(model, optimizer, train_dataloader, device, epoch, print_every=250,do_eval_metrics=do_train_eval_metrics)
         train_loss = train_stats["loss"]
+        if do_train_eval_metrics:
+            print("Train custom metrics:")
+            print(train_stats)
         # update the learning rate
         #lr_scheduler.step()
         # evaluate on the test dataset
@@ -398,6 +410,7 @@ if __name__ == "__main__":
 
         plot_x_y(train_loss_list, val_loss_list, mode="loss_plot")
         plot_x_y(precision_list, recall_list, mode="precision_recall_curve")
+        print("Eval custom metrics:")
         print(eval_stats)
         print("{}# epoch done, Train loss: {}, Validation loss: {}".format(epoch+1,train_loss,val_loss))
         print("---------------------------------------------------------------------")
