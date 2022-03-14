@@ -209,11 +209,12 @@ def visualize_bbox(image,bbox_list,gt_list=[],save=False):
     cv2.waitKey(0) # this freezes and crashes for some reason
 
 def tensor_to_img(tensor_array):
-    tensor_array = tensor_array * 255  # 0 to 255 range
-    tensor_array.cpu().detach().numpy()
+    tensor_array = tensor_array.cpu().detach().numpy()
+    tensor_array = tensor_array * 255
     # h, w, c = img.shape cv2
     # c, h, w = shape for the model
     img = np.transpose(tensor_array, [1, 2, 0])
+    img = img.astype(np.uint8)
     return img
 
 def get_loss(data_loader,model,device):
@@ -472,12 +473,22 @@ def evaluate(model, data_loader, device):
             torch.cuda.synchronize()
         model_time = time.time()
         outputs = model(images)
+        outputs_list = outputs
 
         outputs = [{k: v.to(cpu_device) for k, v in t.items()} for t in outputs]
         model_time = time.time() - model_time
 
         res = {target["image_id"].item(): output for target, output in zip(targets, outputs)}
         cumulative_stats_dict = custom_evaluate(res,targets,cumulative_stats_dict)
+
+        you_want_to_visualise_images = True
+        if you_want_to_visualise_images:
+            for image_index in range(len(images)):
+                gt_boxes_arr = targets[image_index]["boxes"].tolist()
+                boxes_arr = outputs_list[image_index]["boxes"].tolist()
+                if len(boxes_arr) > 0:
+                    ocv_img = tensor_to_img(images[image_index])
+                    visualize_bbox(ocv_img,boxes_arr,gt_boxes_arr)
 
         evaluator_time = time.time()
         coco_evaluator.update(res)
