@@ -37,13 +37,17 @@ from torch.utils.data import DataLoader
 device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
 #device = "cpu"
 
-def plot_x_y(train_loss,val_loss,mode="loss"):
+def plot_x_y(train_loss,val_loss=[],mode=""):
     plt.clf()
     if mode == "loss_plot":
         plt.plot(train_loss)
         plt.plot(val_loss)
         plt.title("Train is blue, eval is orange")
         plt.savefig("LossPlot.png", bbox_inches='tight')
+    if mode == "accuracy_plot":
+        plt.plot(train_loss)
+        plt.title("Evaluation accuracy")
+        plt.savefig("EvalAccuracyPlot.png", bbox_inches='tight')
     if mode == "precision_recall_curve":
         plt.plot(train_loss)
         plt.plot(val_loss)
@@ -68,21 +72,22 @@ class SonarDataset(torch.utils.data.Dataset):
 
         self.imgs = [s for s in os.listdir(root) if s.endswith('.png')]
 
-        self.imgs = self.imgs[0:int(len(self.imgs)*0.01)] # MAKE IT FAST FOR DEBUGGING
+        #self.imgs = self.imgs[0:int(len(self.imgs)*0.05)] # MAKE IT FAST FOR DEBUGGING
 
         csv_boxes = pd.read_csv(csv_file)
 
         self.label2id = {
             "bike": 1,
-            "debris": 2,
             "confirmed_body": 3,
-            "anomaly": 4
+            "anomaly": 2,
+            "debris": 4
         }
 
         img_name_to_box = {}
         for index, asset in csv_boxes.iterrows():
             img_filename = asset["image"]
-            if img_filename not in self.imgs: continue  # if the image isnt in this folder but in the json skip it
+
+            if img_filename not in self.imgs or asset["label"] == "debris": continue  # if the image isnt in this folder but in the json skip it
             # this is so i can create a test train split
 
             if img_filename not in img_name_to_box:
@@ -132,7 +137,7 @@ class SonarDataset(torch.utils.data.Dataset):
         if self.transforms is not None:
             transformed = self.transforms(image=image, bboxes=bboxes2, class_labels=labels)
             img = transformed['image']
-            self.transformed_images[idx] = img
+            #self.transformed_images[idx] = img #this takes up way too much memory
             #visualize_bbox(img,transformed["bboxes"])
             #sys.exit(0)
             #print(transformed)
@@ -237,14 +242,13 @@ def custom_evaluate(res_dict,targets,current_dict,IOU_TRESHOLD = 0.5,SCORE_TRESH
 
         pred_labels = dict_for_img["labels"].tolist()
         pred_scores = dict_for_img["scores"]
-
-
         pred_boxes_mask = nms(boxes=dict_for_img["boxes"], scores=dict_for_img["scores"], iou_threshold=IOU_TRESHOLD)
         pred_boxes = dict_for_img["boxes"][pred_boxes_mask].tolist()
         pred_scores = pred_scores[pred_boxes_mask].tolist()
 
         if len(pred_boxes) > 0:
-            visualize_bbox(dev_dataset.transformed_images[gt_target["image_id"].item()],pred_boxes,gt_boxes)
+            variable_thing = True
+            #visualize_bbox(dev_dataset.transformed_images[gt_target["image_id"].item()],pred_boxes,gt_boxes)
 
         num_predictions = len(pred_boxes)
 
@@ -259,7 +263,7 @@ def custom_evaluate(res_dict,targets,current_dict,IOU_TRESHOLD = 0.5,SCORE_TRESH
         total_pred = 0
         for index in range(MAX_DET):
             if pred_scores[index] > SCORE_TRESHOLD:
-                current_dict["pred_total_b_d_cb_a"][pred_labels[index]] += 1
+                current_dict["pred_total"][pred_labels[index]] += 1
                 total_pred += 1
         used_indexes = []
         for gt_index in range(len(gt_boxes)):
@@ -279,8 +283,6 @@ def custom_evaluate(res_dict,targets,current_dict,IOU_TRESHOLD = 0.5,SCORE_TRESH
                 bb_pred = {
                     'x1': box[0], 'x2': box[2], 'y1': box[1], 'y2': box[3]
                 }
-
-
                 iou_val = get_iou(bb_gt, bb_pred)
                 if iou_val > best_IOU:
                     best_IOU = iou_val
@@ -291,13 +293,13 @@ def custom_evaluate(res_dict,targets,current_dict,IOU_TRESHOLD = 0.5,SCORE_TRESH
                     current_dict["missclassifications"] += 1
                 else:
                     current_dict["TP"] += 1
-                    current_dict["correct_total_b_d_cb_a"][label] += 1
+                    current_dict["correct_total"][label] += 1
                 detected = True
                 used_indexes.append(pred_index)
             if not detected: current_dict["FN"] += 1
         current_dict["FP"] += (total_pred - len(used_indexes))
 
-    total = sum(current_dict["pred_total_b_d_cb_a"])
+    total = sum(current_dict["pred_total"])
     if current_dict["TP"] != 0:
         accuracy = (current_dict["TP"] + current_dict["TN"])/total
         precision = current_dict["TP"]/(current_dict["TP"]+current_dict["FP"])
@@ -306,7 +308,6 @@ def custom_evaluate(res_dict,targets,current_dict,IOU_TRESHOLD = 0.5,SCORE_TRESH
         current_dict["precision"] = precision
         current_dict["recall"] = recall
     return current_dict
-
 
 def train_one_epoch(model, optimizer, data_loader, device, epoch, scaler=None, print_every=50,do_eval_metrics=False):
     model.train()
@@ -321,8 +322,8 @@ def train_one_epoch(model, optimizer, data_loader, device, epoch, scaler=None, p
         "TN": 0,
         "missclassifications": 0,
         "gt_total": 0,
-        "pred_total_b_d_cb_a": [0, 0, 0, 0, 0],
-        "correct_total_b_d_cb_a": [0, 0, 0, 0, 0],
+        "pred_total": [0, 0, 0, 0, 0],
+        "correct_total": [0, 0, 0, 0, 0],
         "recall": 0,
         "precision": 0,
         "accuracy": 0
@@ -458,8 +459,8 @@ def evaluate(model, data_loader, device):
         "TN": 0,
         "missclassifications": 0,
         "gt_total": 0,
-        "pred_total_b_d_cb_a": [0, 0, 0, 0, 0],
-        "correct_total_b_d_cb_a": [0, 0, 0, 0, 0],
+        "pred_total": [0, 0, 0, 0, 0],
+        "correct_total": [0, 0, 0, 0, 0],
         "recall": 0,
         "precision": 0,
         "accuracy": 0
@@ -640,7 +641,6 @@ if __name__ == "__main__":
     pretrain_coco = False # mutually exclusive
     pretrain_imagenet = True  # mutually exclusive
 
-
     print("Sum annotated bodies:{}, anomalies:{}, debris:{}, bikes:{}".format(c_cnf_body, c_anomaly, c_debris, c_bikes))
     print("Original shape:{}, new transformed shape:{}".format(train_dataset.get_image(21).shape,train_dataset[21][0].shape))
     print("{} to {}".format(torch.min(train_dataset[21][0]),torch.max(train_dataset[21][0])))
@@ -652,11 +652,8 @@ if __name__ == "__main__":
     print(torch.version.cuda)
     print("Pretrained on coco:{}, pretrained on imagenet:{}".format(pretrain_coco,pretrain_imagenet))
 
-    torch.backends.cudnn.benchmark = True # speeds up training by some variable amount
-    num_classes = 5  # debris + bike + anomaly + confirmed_victim + background
-
-
-    # load a model pre-trained on COCO
+    torch.backends.cudnn.benchmark = True # error if this isnt used
+    num_classes = 4  # bike + anomaly + confirmed_victim + background
     model = torchvision.models.detection.fasterrcnn_resnet50_fpn(pretrained=pretrain_coco,pretrained_backbone=pretrain_imagenet)
     # only pretrained on coco 2017, if pretrained_backbone = True AND pretrained=False then it uses a backbone pretrained on imagenet
 
@@ -670,13 +667,10 @@ if __name__ == "__main__":
     # construct an optimizer
     params = [p for p in model.parameters() if p.requires_grad]
     optimizer = torch.optim.Adam(params, lr=0.000005, amsgrad=True)  # Trying ADAM here
-                               # momentum=0.9)
-    # and a learning rate scheduler
+
     lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, # reduced step size, not using rn
                                                    step_size=10,
                                                    gamma=0.1)
-
-
     # max batch is 8 with pretrained
     # max batch is 6 with non pretrained
     train_dataloader = DataLoader(train_dataset, batch_size=7,collate_fn=obj_collate_fn,pin_memory=True, shuffle=True, num_workers=1, drop_last=True)
@@ -697,14 +691,16 @@ if __name__ == "__main__":
 
     num_epochs = 100
 
-    best_eval_loss = 0
+    best_eval_loss = 1
     train_loss_list = []
     val_loss_list = []
     precision_list = []
     recall_list = []
+    accuracy_list = []
     best_recall = 0
     best_precision = 0
     do_train_eval_metrics = False
+
     for epoch in range(num_epochs):
         logger,train_stats = train_one_epoch(model, optimizer, train_dataloader, device, epoch, print_every=250,do_eval_metrics=do_train_eval_metrics)
         train_loss = train_stats["loss"]
@@ -719,9 +715,10 @@ if __name__ == "__main__":
 
         train_loss_list.append(train_loss)
         val_loss_list.append(val_loss)
+        accuracy_list.append(eval_stats["accuracy"])
         precision_list.append(eval_stats["precision"])
         recall_list.append(eval_stats["recall"])
-        if eval_stats["recall"] >= best_recall and eval_stats["precision"] >= best_precision:
+        if eval_stats["precision"] != 1 and eval_stats["recall"]+eval_stats["precision"] > best_recall+best_precision:
             print("Improvement, saved model!")
             torch.save(model.state_dict(), "saved_model.pt")
             best_recall = eval_stats["recall"]
@@ -729,7 +726,9 @@ if __name__ == "__main__":
 
         plot_x_y(train_loss_list, val_loss_list, mode="loss_plot")
         plot_x_y(precision_list, recall_list, mode="precision_recall_curve")
+        plot_x_y(accuracy_list, mode="accuracy_plot")
         print("Eval custom metrics:")
+        print("Total and correct labels to indexes {}".format(dev_dataset.label2id))
         print(eval_stats)
         #print("mAP:{}".format(statistics.mean(precision_list)))
         print("{}# epoch done, Train loss: {}, Validation loss: {}".format(epoch+1,train_loss,val_loss))
