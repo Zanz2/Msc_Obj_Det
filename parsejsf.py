@@ -57,15 +57,6 @@ def plot_x_y(train_loss,val_loss,mode="loss"):
 def obj_collate_fn(batch):
     return tuple(zip(*batch))
 
-def visualize_bbox(image,bbox_list,save=False):
-    pic = image
-    for bbox in bbox_list:
-        pic = cv2.rectangle(pic, (int(bbox[0]), int(bbox[1])), (int(bbox[2]), int(bbox[3])), (255,0,0), 2)
-    if save: cv2.imwrite("bbox.png",pic)
-    cv2.imshow("bboxes visualized", pic)
-    cv2.waitKey(0) # this freezes and crashes for some reason
-
-
 class SonarDataset(torch.utils.data.Dataset):
     def __init__(self, root, csv_file, transforms):
         self.root = root
