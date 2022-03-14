@@ -515,7 +515,7 @@ def evaluate(model, data_loader, device):
 if __name__ == "__main__":
     # laptop = "C:/Users/zanza/Desktop/MSC_work/Msc_Obj_Det/"
     # desktop = "C:/Users/Moji podatki/Desktop/github/Msc_Obj_Det/"
-    prefix1 = "C:/Users/zanza/Desktop/MSC_work/Msc_Obj_Det/"
+    prefix1 = "C:/Users/Moji podatki/Desktop/github/Msc_Obj_Det/"
     target = "conversions/vott_to_vgg_proj/empty_vgg_json.json"
     source = "conversions/vott_to_vgg_proj/source_vott_csv.csv"
     target_folder = prefix1+"data/vott/run3_big/input"
@@ -678,11 +678,12 @@ if __name__ == "__main__":
                                                    step_size=10,
                                                    gamma=0.1)
 
-    # max batch is 8,2 with pretrained (bestpc,laptop,oldpc)
-    # max batch is 6,2 with non pretrained (bestpc,laptop,oldpc)
-    train_dataloader = DataLoader(train_dataset, batch_size=2,collate_fn=obj_collate_fn,pin_memory=True, shuffle=True, num_workers=0, drop_last=True)
-    dev_dataloader = DataLoader(dev_dataset, batch_size=2,collate_fn=obj_collate_fn,pin_memory=True, shuffle=True, num_workers=0, drop_last=True) # To make dev validation loss more stable with small sample sizes data augmentation can be used
-    test_dataloader = DataLoader(test_dataset, batch_size=2,collate_fn=obj_collate_fn,pin_memory=True, shuffle=True, num_workers=0, drop_last=True)
+
+    # max batch is 8 with pretrained
+    # max batch is 6 with non pretrained
+    train_dataloader = DataLoader(train_dataset, batch_size=7,collate_fn=obj_collate_fn,pin_memory=True, shuffle=True, num_workers=1, drop_last=True)
+    dev_dataloader = DataLoader(dev_dataset, batch_size=4,collate_fn=obj_collate_fn,pin_memory=True, shuffle=True, num_workers=1, drop_last=True) # To make dev validation loss more stable with small sample sizes data augmentation can be used
+    test_dataloader = DataLoader(test_dataset, batch_size=4,collate_fn=obj_collate_fn,pin_memory=True, shuffle=True, num_workers=1, drop_last=True)
 
     visualize_test_boxes = [[621.2121, 231.6017, 699.1342, 300.8658],
                   [505.4113, 751.0823, 596.3203, 808.4416],
@@ -732,7 +733,7 @@ if __name__ == "__main__":
         plot_x_y(precision_list, recall_list, mode="precision_recall_curve")
         print("Eval custom metrics:")
         print(eval_stats)
-        print("mAP:{}".format(statistics.mean(precision_list)))
+        #print("mAP:{}".format(statistics.mean(precision_list)))
         print("{}# epoch done, Train loss: {}, Validation loss: {}".format(epoch+1,train_loss,val_loss))
         print("---------------------------------------------------------------------")
 
