@@ -645,6 +645,11 @@ if __name__ == "__main__":
     #visualize(train_dataset[0][0])
     #[x1, y1, x2, y2] format, with 0 <= x1 < x2 <= W and 0 <= y1 < y2 <= H.
     # h, w, c = img.shape
+
+    pretrain_coco = False # mutually exclusive
+    pretrain_imagenet = True  # mutually exclusive
+
+
     print("Sum annotated bodies:{}, anomalies:{}, debris:{}, bikes:{}".format(c_cnf_body, c_anomaly, c_debris, c_bikes))
     print("Original shape:{}, new transformed shape:{}".format(train_dataset.get_image(21).shape,train_dataset[21][0].shape))
     print("{} to {}".format(torch.min(train_dataset[21][0]),torch.max(train_dataset[21][0])))
@@ -654,12 +659,14 @@ if __name__ == "__main__":
     print("Number of images train:{}, dev:{}, test:{}".format(len(train_dataset),len(dev_dataset),len(test_dataset)))
     print(device)
     print(torch.version.cuda)
+    print("Pretrained on coco:{}, pretrained on imagenet:{}".format(pretrain_coco,pretrain_imagenet))
 
     torch.backends.cudnn.benchmark = True # speeds up training by some variable amount
     num_classes = 5  # debris + bike + anomaly + confirmed_victim + background
 
+
     # load a model pre-trained on COCO
-    model = torchvision.models.detection.fasterrcnn_resnet50_fpn(pretrained=False,pretrained_backbone=True)
+    model = torchvision.models.detection.fasterrcnn_resnet50_fpn(pretrained=pretrain_coco,pretrained_backbone=pretrain_imagenet)
     # only pretrained on coco 2017, if pretrained_backbone = True AND pretrained=False then it uses a backbone pretrained on imagenet
 
     # get number of input features for the classifier
