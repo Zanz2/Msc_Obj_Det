@@ -52,11 +52,11 @@ def plot_x_y(train_loss,val_loss=[],mode=""):
         plt.plot(train_loss)
         plt.plot(val_loss)
         plt.title("Precision is blue, recall is orange")
-        plt.savefig("PRCurve.png", bbox_inches='tight')
-        plt.clf()
-        plt.plot(train_loss,val_loss)
-        plt.title("Precision is X, recall is Y")
         plt.savefig("PRPlot.png", bbox_inches='tight')
+    if mode == "precision_recall":
+        plt.plot(train_loss, val_loss)
+        plt.title("Precision is X, recall is Y")
+        plt.savefig("PRCurve_real.png", bbox_inches='tight')
 
 def obj_collate_fn(batch):
     return tuple(zip(*batch))
@@ -137,10 +137,6 @@ class SonarDataset(torch.utils.data.Dataset):
         if self.transforms is not None:
             transformed = self.transforms(image=image, bboxes=bboxes2, class_labels=labels)
             img = transformed['image']
-            #self.transformed_images[idx] = img #this takes up way too much memory
-            #visualize_bbox(img,transformed["bboxes"])
-            #sys.exit(0)
-            #print(transformed)
 
             target["boxes"] = []
             if len(transformed['bboxes']) > 0:
@@ -198,15 +194,19 @@ def get_class_stats(vott_csv):
     return coverage_dict
 
 
-def visualize_bbox(image,bbox_list,gt_list=[],save=False):
+def visualize_bbox(image,bbox_list,gt_list=[],save=False,save_name=""):
+    if len(bbox_list) == 0 or len(gt_list) == 0:
+        return
     pic = image
     for gt in gt_list:
         pic = cv2.rectangle(pic, (int(gt[0]), int(gt[1])), (int(gt[2]), int(gt[3])), (0,255,0), 2)
     for bbox in bbox_list:
         pic = cv2.rectangle(pic, (int(bbox[0]), int(bbox[1])), (int(bbox[2]), int(bbox[3])), (255,0,0), 2)
-    if save: cv2.imwrite("bbox.png",pic)
-    cv2.imshow("bboxes visualized", pic)
-    cv2.waitKey(0) # this freezes and crashes for some reason
+    if save:
+        cv2.imwrite("images/bbox_img_id_{}_.png".format(save_name),pic)
+    else:
+        cv2.imshow("bboxes visualized", pic)
+        cv2.waitKey(0) # this freezes and crashes for some reason
 
 def tensor_to_img(tensor_array):
     tensor_array = tensor_array.cpu().detach().numpy()
@@ -230,11 +230,26 @@ def get_loss(data_loader,model,device):
     model.eval()
     return eval_loss
 
-def custom_evaluate(res_dict,targets,current_dict,IOU_TRESHOLD = 0.5,SCORE_TRESHOLD = 0.5,MAX_NUM_DET=50):
+def custom_evaluate(res_dict,targets,current_dict,images=[],visualize=False,IOU_TRESHOLD = 0.5,SCORE_TRESHOLD = 0.5,MAX_NUM_DET=50):
+    if "pred_total" not in current_dict and visualize == True:
+        current_dict = {
+            "TP": 0,
+            "FP": 0,
+            "FN": 0,
+            "TN": 0,
+            "missclassifications": 0,
+            "gt_total": 0,
+            "pred_total": [0, 0, 0, 0, 0],
+            "correct_total": [0, 0, 0, 0, 0],
+            "recall": 0,
+            "precision": 0,
+            "accuracy": 0
+        }
+
     current_dict["iou_treshold"] = IOU_TRESHOLD
     current_dict["confidence_treshold"] = SCORE_TRESHOLD
     current_dict["max_num_det"] = MAX_NUM_DET
-    for gt_target in targets:
+    for img_index,gt_target in enumerate(targets):
         dict_for_img = res_dict[gt_target["image_id"].item()]
 
         gt_boxes = gt_target["boxes"].tolist()
@@ -246,11 +261,6 @@ def custom_evaluate(res_dict,targets,current_dict,IOU_TRESHOLD = 0.5,SCORE_TRESH
         pred_boxes_mask = nms(boxes=dict_for_img["boxes"], scores=dict_for_img["scores"], iou_threshold=IOU_TRESHOLD)
         pred_boxes = dict_for_img["boxes"][pred_boxes_mask].tolist()
         pred_scores = pred_scores[pred_boxes_mask].tolist()
-
-        if len(pred_boxes) > 0:
-            variable_thing = True
-            #visualize_bbox(dev_dataset.transformed_images[gt_target["image_id"].item()],pred_boxes,gt_boxes)
-
         num_predictions = len(pred_boxes)
 
         if num_predictions == 0:
@@ -299,6 +309,9 @@ def custom_evaluate(res_dict,targets,current_dict,IOU_TRESHOLD = 0.5,SCORE_TRESH
                 used_indexes.append(pred_index)
             if not detected: current_dict["FN"] += 1
         current_dict["FP"] += (total_pred - len(used_indexes))
+        if visualize:
+            vis_pred_boxes = [box for index, box in enumerate(pred_boxes) if pred_scores[index] > SCORE_TRESHOLD]
+            visualize_bbox(images[img_index],vis_pred_boxes,gt_boxes,save=True,save_name="{}_thrs{}".format(gt_target["image_id"].item(),SCORE_TRESHOLD))
 
     total = sum(current_dict["pred_total"])
     if current_dict["TP"] != 0:
@@ -310,25 +323,13 @@ def custom_evaluate(res_dict,targets,current_dict,IOU_TRESHOLD = 0.5,SCORE_TRESH
         current_dict["recall"] = recall
     return current_dict
 
-def train_one_epoch(model, optimizer, data_loader, device, epoch, scaler=None, print_every=50,do_eval_metrics=False):
+def train_one_epoch(model, optimizer, data_loader, device, epoch, scaler=None, print_every=50):
     model.train()
     metric_logger = utils2.MetricLogger(delimiter="  ")
     metric_logger.add_meter("lr", utils2.SmoothedValue(window_size=1, fmt="{value:.6f}"))
     header = f"Epoch: [{epoch}]"
 
-    cumulative_stats_dict = {
-        "TP": 0,
-        "FP": 0,
-        "FN": 0,
-        "TN": 0,
-        "missclassifications": 0,
-        "gt_total": 0,
-        "pred_total": [0, 0, 0, 0, 0],
-        "correct_total": [0, 0, 0, 0, 0],
-        "recall": 0,
-        "precision": 0,
-        "accuracy": 0
-    }
+    cumulative_stats_dict = {}
 
     lr_scheduler = None
     if epoch == 0:
@@ -378,28 +379,6 @@ def train_one_epoch(model, optimizer, data_loader, device, epoch, scaler=None, p
 
     cumulative_stats_dict["loss"] = avg_loss_value / img_counter
 
-    if do_eval_metrics:
-        print("Eval metrics of train set:")
-        cpu_device = torch.device("cpu")
-        model.eval()
-        coco = get_coco_api_from_dataset(data_loader.dataset)
-        iou_types = _get_iou_types(model)
-        coco_evaluator = CocoEvaluator(coco, iou_types)
-        for images, targets in data_loader:
-            images = list(img.to(device) for img in images)
-            if torch.cuda.is_available():
-                torch.cuda.synchronize()
-            outputs = model(images)
-            outputs = [{k: v.to(cpu_device) for k, v in t.items()} for t in outputs]
-            res = {target["image_id"].item(): output for target, output in zip(targets, outputs)}
-            cumulative_stats_dict = custom_evaluate(res, targets, cumulative_stats_dict)
-            coco_evaluator.update(res)
-
-        coco_evaluator.synchronize_between_processes()
-        # accumulate predictions from all images
-        coco_evaluator.accumulate()
-        coco_evaluator.summarize()
-
     return metric_logger, cumulative_stats_dict
 
 def get_iou(bb1, bb2):
@@ -441,7 +420,7 @@ def _get_iou_types(model):
 
 
 @torch.inference_mode()
-def evaluate(model, data_loader, device):
+def evaluate(model, data_loader, device, eval_visualize=False, score_threshold = 0.5):
     n_threads = torch.get_num_threads()
     # FIXME remove this and make paste_masks_in_image run on the GPU
     torch.set_num_threads(1)
@@ -473,22 +452,12 @@ def evaluate(model, data_loader, device):
             torch.cuda.synchronize()
         model_time = time.time()
         outputs = model(images)
-        outputs_list = outputs
 
         outputs = [{k: v.to(cpu_device) for k, v in t.items()} for t in outputs]
         model_time = time.time() - model_time
 
         res = {target["image_id"].item(): output for target, output in zip(targets, outputs)}
-        cumulative_stats_dict = custom_evaluate(res,targets,cumulative_stats_dict)
-
-        you_want_to_visualise_images = True
-        if you_want_to_visualise_images:
-            for image_index in range(len(images)):
-                gt_boxes_arr = targets[image_index]["boxes"].tolist()
-                boxes_arr = outputs_list[image_index]["boxes"].tolist()
-                if len(boxes_arr) > 0:
-                    ocv_img = tensor_to_img(images[image_index])
-                    visualize_bbox(ocv_img,boxes_arr,gt_boxes_arr)
+        cumulative_stats_dict = custom_evaluate(res,targets,cumulative_stats_dict,images=images,visualize=eval_visualize,SCORE_TRESHOLD=score_threshold)
 
         evaluator_time = time.time()
         coco_evaluator.update(res)
@@ -697,9 +666,6 @@ if __name__ == "__main__":
     # keep in mind boxes returned from the dataset using the traditional indexing get item method are returned transformed,
     # while images returned using get_image are not
 
-    #visualize_bbox(train_dataset.get_image(21), visualize_test_boxes, save=True)
-    #sys.exit(0)
-
     num_epochs = 100
 
     best_eval_loss = 1
@@ -710,40 +676,56 @@ if __name__ == "__main__":
     accuracy_list = []
     best_recall = 0
     best_precision = 0
-    do_train_eval_metrics = False
 
-    for epoch in range(num_epochs):
-        logger,train_stats = train_one_epoch(model, optimizer, train_dataloader, device, epoch, print_every=250,do_eval_metrics=do_train_eval_metrics)
-        train_loss = train_stats["loss"]
-        if do_train_eval_metrics:
-            print("Train custom metrics:")
-            print(train_stats)
-        # update the learning rate
-        #lr_scheduler.step()
-        # evaluate on the test dataset
-        coco_eval_obj, eval_stats = evaluate(model, dev_dataloader, device=device)
-        val_loss = eval_stats["loss"]
+    eval_test = True
+    if not eval_test:
+        for epoch in range(num_epochs):
+            logger,train_stats = train_one_epoch(model, optimizer, train_dataloader, device, epoch, print_every=250)
+            train_loss = train_stats["loss"]
 
-        train_loss_list.append(train_loss)
-        val_loss_list.append(val_loss)
-        accuracy_list.append(eval_stats["accuracy"])
-        precision_list.append(eval_stats["precision"])
-        recall_list.append(eval_stats["recall"])
-        if eval_stats["precision"] != 1 and eval_stats["recall"]+eval_stats["precision"] > best_recall+best_precision:
-            print("Improvement, saved model!")
-            torch.save(model.state_dict(), "saved_model.pt")
-            best_recall = eval_stats["recall"]
-            best_precision = eval_stats["precision"]
+            # update the learning rate
+            #lr_scheduler.step()
+            # evaluate on the test dataset
+            coco_eval_obj, eval_stats = evaluate(model, dev_dataloader, device=device,eval_visualize=False)
+            val_loss = eval_stats["loss"]
 
-        plot_x_y(train_loss_list, val_loss_list, mode="loss_plot")
-        plot_x_y(precision_list, recall_list, mode="precision_recall_curve")
-        plot_x_y(accuracy_list, mode="accuracy_plot")
-        print("Eval custom metrics:")
-        print("Total and correct labels to indexes {}".format(dev_dataset.label2id))
-        print(eval_stats)
-        #print("mAP:{}".format(statistics.mean(precision_list)))
-        print("{}# epoch done, Train loss: {}, Validation loss: {}".format(epoch+1,train_loss,val_loss))
-        print("---------------------------------------------------------------------")
+            train_loss_list.append(train_loss)
+            val_loss_list.append(val_loss)
+            accuracy_list.append(eval_stats["accuracy"])
+            precision_list.append(eval_stats["precision"])
+            recall_list.append(eval_stats["recall"])
+            if eval_stats["precision"] != 1 and eval_stats["recall"]+eval_stats["precision"] > best_recall+best_precision:
+                print("Improvement, saved model!")
+                torch.save(model.state_dict(), "saved_model.pt")
+                best_recall = eval_stats["recall"]
+                best_precision = eval_stats["precision"]
+
+            plot_x_y(train_loss_list, val_loss_list, mode="loss_plot")
+            plot_x_y(precision_list, recall_list, mode="precision_recall_curve")
+            plot_x_y(accuracy_list, mode="accuracy_plot")
+            print("Eval custom metrics:")
+            print("Total and correct labels to indexes {}".format(dev_dataset.label2id))
+            print(eval_stats)
+            #print("mAP:{}".format(statistics.mean(precision_list)))
+            print("{}# epoch done, Train loss: {}, Validation loss: {}".format(epoch+1,train_loss,val_loss))
+            print("---------------------------------------------------------------------")
+    else:
+        model = torchvision.models.detection.fasterrcnn_resnet50_fpn(pretrained=pretrain_coco,
+                                                                     pretrained_backbone=pretrain_imagenet)
+        in_features = model.roi_heads.box_predictor.cls_score.in_features
+        # replace the pre-trained head with a new one
+        model.roi_heads.box_predictor = FastRCNNPredictor(in_features, num_classes)
+        model.to(device)
+        torch.cuda.empty_cache()
+        model.load_state_dict(torch.load("saved_model_name.pt"))
+        model.eval()
+        for score_step in np.arange(0.0, 1.0, 0.1):
+            coco_eval_obj, eval_stats = evaluate(model, dev_dataloader, device=device, eval_visualize=True,score_threshold=score_step)
+            accuracy_list.append(eval_stats["accuracy"])
+            precision_list.append(eval_stats["precision"])
+            recall_list.append(eval_stats["recall"])
+        plot_x_y(accuracy_list,mode="accuracy_plot")
+        plot_x_y(precision_list,recall_list, mode="precision_recall")
 
     print("That's it!")
 
