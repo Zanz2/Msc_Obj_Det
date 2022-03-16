@@ -61,6 +61,9 @@ def plot_x_y(train_loss,val_loss=[],mode=""):
 def obj_collate_fn(batch):
     return tuple(zip(*batch))
 
+def round_down(x, a):
+    return math.floor(x / a) * a
+
 class SonarDataset(torch.utils.data.Dataset):
     def __init__(self, root, csv_file, transforms):
         self.root = root
@@ -195,7 +198,7 @@ def get_class_stats(vott_csv):
 
 
 def visualize_bbox(image,bbox_list,gt_list=[],vis_pred_labels=[],gt_labels=[],save=False,save_name=""):
-    if len(bbox_list) == 0 or len(gt_list) == 0: # !!!! IT only saves images where gt and pred boxes are present
+    if len(bbox_list) == 0:
         return
     id2label = {
         1:"bike",
@@ -211,7 +214,7 @@ def visualize_bbox(image,bbox_list,gt_list=[],vis_pred_labels=[],gt_labels=[],sa
         pic = cv2.rectangle(pic, (int(bbox[0]), int(bbox[1])), (int(bbox[2]), int(bbox[3])), (255,0,0), 1) # blue green red
         if len(vis_pred_labels) > 0: pic = cv2.putText(pic, id2label[vis_pred_labels[index]], (int(bbox[0])+10, int(bbox[1])+10), cv2.FONT_HERSHEY_SIMPLEX,0.5, (255,0,0), 1, cv2.LINE_AA)
     if save:
-        cv2.imwrite("{}.png".format(save_name),pic)
+        cv2.imwrite("{}.jpg".format(save_name),pic)
     else:
         cv2.imshow("bboxes visualized", pic)
         cv2.waitKey(0) # this freezes and crashes for some reason
@@ -321,8 +324,7 @@ def custom_evaluate(res_dict,targets,current_dict,images=[],visualize=False,IOU_
             vis_pred_boxes = [box for index, box in enumerate(pred_boxes) if pred_scores[index] > SCORE_TRESHOLD]
             vis_pred_labels = [pred_labels[index] for index, _ in enumerate(pred_boxes) if pred_scores[index] > SCORE_TRESHOLD]
             numpy_image = tensor_to_img(images[img_index])
-            visualize_bbox(numpy_image,vis_pred_boxes,gt_boxes,vis_pred_labels=vis_pred_labels,gt_labels=gt_labels,save=True,save_name="C:/Users/Moji podatki/Desktop/github/Msc_Obj_Det/images/{}/img_id{}".format(SCORE_TRESHOLD,gt_target["image_id"].item()))
-            #print("Saved Image!")
+            visualize_bbox(numpy_image,vis_pred_boxes,gt_boxes,vis_pred_labels=vis_pred_labels,gt_labels=gt_labels,save=True,save_name="F:/projekti/msc_sonar_models/visualizations/{}/img_id{}".format(round_down(SCORE_TRESHOLD,0.1),gt_target["image_id"].item()))
 
     total = sum(current_dict["pred_total"])
     if current_dict["TP"] != 0:
@@ -606,9 +608,9 @@ if __name__ == "__main__":
     sonar_transform = A.Compose([ # strecthing, different intensities probably safe
         A.RandomCrop(width=1000, height=350),
         A.VerticalFlip(p=0.5),
-        A.RandomBrightnessContrast(p=0.20),
-        A.RandomGamma(p=0.20),
-        A.Equalize(p=0.20),
+        A.RandomBrightnessContrast(p=0.25),
+        A.RandomGamma(p=0.25),
+        A.Equalize(p=0.25),
     ], bbox_params=A.BboxParams(format='pascal_voc',label_fields=['class_labels']))
 
     sonar_eval_transform = A.Compose([  # strecthing, different intensities probably safe
@@ -630,8 +632,8 @@ if __name__ == "__main__":
     #[x1, y1, x2, y2] format, with 0 <= x1 < x2 <= W and 0 <= y1 < y2 <= H.
     # h, w, c = img.shape
 
-    pretrain_coco = False # mutually exclusive
-    pretrain_imagenet = True  # mutually exclusive
+    pretrain_coco = True # mutually exclusive
+    pretrain_imagenet = False  # mutually exclusive
 
     print("Sum annotated bodies:{}, anomalies:{}, debris:{}, bikes:{}".format(c_cnf_body, c_anomaly, c_debris, c_bikes))
     print("Original shape:{}, new transformed shape:{}".format(train_dataset.get_image(21).shape,train_dataset[21][0].shape))
@@ -689,7 +691,7 @@ if __name__ == "__main__":
     best_recall = 0
     best_precision = 0
 
-    eval_test = True
+    eval_test = False
     if not eval_test:
         for epoch in range(num_epochs):
             logger,train_stats = train_one_epoch(model, optimizer, train_dataloader, device, epoch, print_every=250)
@@ -734,7 +736,7 @@ if __name__ == "__main__":
         torch.cuda.empty_cache()
         model.load_state_dict(torch.load("F:/projekti/msc_sonar_models/saved_model48.pt"))
         model.eval()
-        for score_step in np.arange(0.0, 1.0, 0.1):
+        for score_step in np.arange(0.0, 1.0, 0.01):
             print("Evaluating on score treshold {}".format(score_step))
             coco_eval_obj, eval_stats = evaluate(model, dev_dataloader, device=device, eval_visualize=True,score_threshold=score_step)
             accuracy_list.append(eval_stats["accuracy"])
