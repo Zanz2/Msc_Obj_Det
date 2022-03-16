@@ -194,16 +194,24 @@ def get_class_stats(vott_csv):
     return coverage_dict
 
 
-def visualize_bbox(image,bbox_list,gt_list=[],save=False,save_name=""):
-    if len(bbox_list) == 0 or len(gt_list) == 0:
+def visualize_bbox(image,bbox_list,gt_list=[],vis_pred_labels=[],gt_labels=[],save=False,save_name=""):
+    if len(bbox_list) == 0 or len(gt_list) == 0: # !!!! IT only saves images where gt and pred boxes are present
         return
-    pic = image
-    for gt in gt_list:
-        pic = cv2.rectangle(pic, (int(gt[0]), int(gt[1])), (int(gt[2]), int(gt[3])), (0,255,0), 2)
-    for bbox in bbox_list:
-        pic = cv2.rectangle(pic, (int(bbox[0]), int(bbox[1])), (int(bbox[2]), int(bbox[3])), (255,0,0), 2)
+    id2label = {
+        1:"bike",
+        3:"confirmed_body",
+        2:"anomaly",
+        4:"debris"
+    }
+    pic = image # vis_pred_labels=vis_pred_labels,gt_labels=gt_labels
+    for index, gt in enumerate(gt_list):
+        pic = cv2.rectangle(pic, (int(gt[0]), int(gt[1])), (int(gt[2]), int(gt[3])), (0,255,0), 1) # blue green red
+        if len(gt_labels) > 0: pic = cv2.putText(pic, id2label[gt_labels[index]], (int(gt[0])+10, int(gt[1])+10), cv2.FONT_HERSHEY_SIMPLEX,0.5, (0,255,0), 1, cv2.LINE_AA)
+    for index, bbox in enumerate(bbox_list):
+        pic = cv2.rectangle(pic, (int(bbox[0]), int(bbox[1])), (int(bbox[2]), int(bbox[3])), (255,0,0), 1) # blue green red
+        if len(vis_pred_labels) > 0: pic = cv2.putText(pic, id2label[vis_pred_labels[index]], (int(bbox[0])+10, int(bbox[1])+10), cv2.FONT_HERSHEY_SIMPLEX,0.5, (255,0,0), 1, cv2.LINE_AA)
     if save:
-        cv2.imwrite("images/bbox_img_id_{}_.png".format(save_name),pic)
+        cv2.imwrite("{}.png".format(save_name),pic)
     else:
         cv2.imshow("bboxes visualized", pic)
         cv2.waitKey(0) # this freezes and crashes for some reason
@@ -220,10 +228,10 @@ def tensor_to_img(tensor_array):
 def get_loss(data_loader,model,device):
     eval_loss = 0
     model.train()
-    for images, targets in data_loader:
-        images = list(img.to(device) for img in images)
-        targets = [{k: v.to(device) for k, v in t.items()} for t in targets]  # v.to(device)
-        with torch.no_grad():
+    with torch.no_grad():
+        for images, targets in data_loader:
+            images = list(img.to(device) for img in images)
+            targets = [{k: v.to(device) for k, v in t.items()} for t in targets]  # v.to(device)
             loss_dict = model(images, targets)
             losses = sum(loss for loss in loss_dict.values())
             eval_loss += losses.item()
@@ -311,7 +319,10 @@ def custom_evaluate(res_dict,targets,current_dict,images=[],visualize=False,IOU_
         current_dict["FP"] += (total_pred - len(used_indexes))
         if visualize:
             vis_pred_boxes = [box for index, box in enumerate(pred_boxes) if pred_scores[index] > SCORE_TRESHOLD]
-            visualize_bbox(images[img_index],vis_pred_boxes,gt_boxes,save=True,save_name="{}_thrs{}".format(gt_target["image_id"].item(),SCORE_TRESHOLD))
+            vis_pred_labels = [pred_labels[index] for index, _ in enumerate(pred_boxes) if pred_scores[index] > SCORE_TRESHOLD]
+            numpy_image = tensor_to_img(images[img_index])
+            visualize_bbox(numpy_image,vis_pred_boxes,gt_boxes,vis_pred_labels=vis_pred_labels,gt_labels=gt_labels,save=True,save_name="C:/Users/Moji podatki/Desktop/github/Msc_Obj_Det/images/{}/img_id{}".format(SCORE_TRESHOLD,gt_target["image_id"].item()))
+            #print("Saved Image!")
 
     total = sum(current_dict["pred_total"])
     if current_dict["TP"] != 0:
@@ -432,6 +443,7 @@ def evaluate(model, data_loader, device, eval_visualize=False, score_threshold =
     coco = get_coco_api_from_dataset(data_loader.dataset)
     iou_types = _get_iou_types(model)
     coco_evaluator = CocoEvaluator(coco, iou_types)
+
     cumulative_stats_dict = {
         "TP": 0,
         "FP": 0,
@@ -594,9 +606,9 @@ if __name__ == "__main__":
     sonar_transform = A.Compose([ # strecthing, different intensities probably safe
         A.RandomCrop(width=1000, height=350),
         A.VerticalFlip(p=0.5),
-        A.RandomBrightnessContrast(p=0.2),
-        A.RandomGamma(p=0.2),
-        A.Equalize(p=0.2),
+        A.RandomBrightnessContrast(p=0.20),
+        A.RandomGamma(p=0.20),
+        A.Equalize(p=0.20),
     ], bbox_params=A.BboxParams(format='pascal_voc',label_fields=['class_labels']))
 
     sonar_eval_transform = A.Compose([  # strecthing, different intensities probably safe
@@ -646,7 +658,7 @@ if __name__ == "__main__":
 
     # construct an optimizer
     params = [p for p in model.parameters() if p.requires_grad]
-    optimizer = torch.optim.Adam(params, lr=0.000005, amsgrad=True)  # Trying ADAM here
+    optimizer = torch.optim.Adam(params, lr=0.00005, amsgrad=True)  # Trying ADAM here
 
     lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, # reduced step size, not using rn
                                                    step_size=10,
@@ -694,11 +706,14 @@ if __name__ == "__main__":
             accuracy_list.append(eval_stats["accuracy"])
             precision_list.append(eval_stats["precision"])
             recall_list.append(eval_stats["recall"])
-            if eval_stats["precision"] != 1 and eval_stats["recall"]+eval_stats["precision"] > best_recall+best_precision:
+            if eval_stats["precision"] != 1 and (eval_stats["recall"]+eval_stats["precision"]) > (best_recall+best_precision):
                 print("Improvement, saved model!")
                 torch.save(model.state_dict(), "saved_model.pt")
                 best_recall = eval_stats["recall"]
                 best_precision = eval_stats["precision"]
+
+            if epoch % 10 == 0:
+                torch.save(model.state_dict(), "F:/projekti/msc_sonar_models/saved_model_epoch{}.pt".format(epoch))
 
             plot_x_y(train_loss_list, val_loss_list, mode="loss_plot")
             plot_x_y(precision_list, recall_list, mode="precision_recall_curve")
@@ -717,9 +732,10 @@ if __name__ == "__main__":
         model.roi_heads.box_predictor = FastRCNNPredictor(in_features, num_classes)
         model.to(device)
         torch.cuda.empty_cache()
-        model.load_state_dict(torch.load("saved_model_name.pt"))
+        model.load_state_dict(torch.load("F:/projekti/msc_sonar_models/saved_model48.pt"))
         model.eval()
         for score_step in np.arange(0.0, 1.0, 0.1):
+            print("Evaluating on score treshold {}".format(score_step))
             coco_eval_obj, eval_stats = evaluate(model, dev_dataloader, device=device, eval_visualize=True,score_threshold=score_step)
             accuracy_list.append(eval_stats["accuracy"])
             precision_list.append(eval_stats["precision"])
