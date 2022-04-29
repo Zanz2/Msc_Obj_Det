@@ -120,7 +120,10 @@ class SonarDataset(torch.utils.data.Dataset):
 
             if img_filename not in img_name_to_box:
                 img_name_to_box[img_filename] = []
-                if self.type == "reduced": reduced_set.append(img_filename)
+                if self.type == "reduced":
+                    reduced_set.append(img_filename)
+                    if asset["label"] == "confirmed_body":
+                        for x in range(3): reduced_set.append(img_filename)
             img_name_to_box[img_filename].append(
                 [asset["xmin"], asset["ymin"], asset["xmax"], asset["ymax"], self.label2id[asset["label"]]])
             if self.type == "oversampled" and asset["label"] == "confirmed_body":
@@ -247,7 +250,11 @@ def visualize_bbox(image,bbox_list,gt_list=[],vis_pred_labels=[],gt_labels=[],vi
         if len(vis_pred_scores) > 0: label_score_string += " "+str(vis_pred_scores[index])[0:4]
         pic = cv2.putText(pic,label_score_string, (int(bbox[0]) + 10, int(bbox[1]) + 10),cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 0, 255), 1, cv2.LINE_AA)
     if save:
-        cv2.imwrite("{}.jpg".format(save_name),pic,[int(cv2.IMWRITE_JPEG_QUALITY), 88])
+        if len(gt_list) > 0:
+            save_name = "{}_GT".format(save_name)
+        else:
+            save_name = "{}_FP".format(save_name)
+        cv2.imwrite("{}.jpg".format(save_name),pic,[int(cv2.IMWRITE_JPEG_QUALITY), 96])
         #print("{}.jpg".format(save_name))
     else:
         cv2.imshow("bboxes visualized", pic)
@@ -674,7 +681,7 @@ if __name__ == "__main__":
     plt.savefig('DatasetDistributions.png', bbox_inches='tight')
 
     sonar_transform = A.Compose([ # strecthing, different intensities probably safe
-        A.RandomCrop(width=1000, height=350),
+        A.RandomCrop(width=1000, height=400),
         #A.RandomResizedCrop(350),
         A.VerticalFlip(p=0.5),
         A.RandomBrightnessContrast(p=0.3),
@@ -693,7 +700,7 @@ if __name__ == "__main__":
     test = output_folder+"dev" # switched because /test has more files for evaluation
     dev = output_folder+"test"
 
-    train_dataset = SonarDataset(train,csv_file,sonar_transform,type="reduced")
+    train_dataset = SonarDataset(train,csv_file,sonar_transform,type="oversampled")
     dev_dataset = SonarDataset(dev,csv_file,sonar_eval_transform)
     test_dataset = SonarDataset(test,csv_file,sonar_eval_transform)
 
@@ -702,8 +709,8 @@ if __name__ == "__main__":
     # h, w, c = img.shape
 
     pretrain_coco = False # mutually exclusive
-    pretrain_imagenet = False # mutually exclusive
-    weight_decay_val = 0 # 0.00005
+    pretrain_imagenet = True # mutually exclusive
+    weight_decay_val = 0.0000 # 0.00005
     bb_train_val = 5
     num_classes = 4  # bike + anomaly + confirmed_victim + background (debris is not used anymore)
     lr_val = 0.0001 # 0.00005
@@ -721,36 +728,29 @@ if __name__ == "__main__":
     print("Weight decay:{}, trainable bb layers (5 is all):{}".format(weight_decay_val,bb_train_val))
 
     torch.backends.cudnn.benchmark = True
-    anchor_sizes = ((32,), (64,), (128,), (256,),(512,))
-    aspect_ratios = ((0.1 ,0.25, 0.5,0.75, 1.0, 2.0),) * len(anchor_sizes)
+    anchor_sizes = ((32,), (64,), (128,), (256,),(512,)) # original
+    #anchor_sizes = ((20,), (40,), (80,), (120,), (280,))
+    aspect_ratios = ((0.15, 0.33, 0.5, 0.66, 1.0, 1.5, 2),) * len(anchor_sizes) # height / width
     rpn_sonar_anchor_gen = AnchorGenerator(
         anchor_sizes, aspect_ratios
     )
-    #roi_pooler = torchvision.ops.MultiScaleRoIAlign(featmap_names=['0'],
-    #                                                output_size=7,
-    #                                                sampling_ratio=2) # changed from 8 to 12
+    '''
     model = fasterrcnn_resnet18(
         pretrained_backbone=pretrain_imagenet,
         trainable_bb_layers=bb_train_val, # 5 is all (none are frozen)
         rpn_anchor_generator=rpn_sonar_anchor_gen,
-        rpn_pre_nms_top_n_train=20000,
-        rpn_pre_nms_top_n_test=10000,
-        rpn_post_nms_top_n_train=5000,
-        rpn_post_nms_top_n_test=2500,
-        box_detections_per_img=1000,
+        box_detections_per_img=280,
     )
     '''
     model = torchvision.models.detection.fasterrcnn_resnet50_fpn(
         pretrained_backbone=pretrain_imagenet,
-        trainable_bb_layers=bb_train_val, # 5 is all (none are frozen)
+        trainable_backbone_layers=bb_train_val, # 5 is all (none are frozen)
         rpn_anchor_generator=rpn_sonar_anchor_gen,
-        rpn_pre_nms_top_n_train=20000,
-        rpn_pre_nms_top_n_test=10000,
-        rpn_post_nms_top_n_train=5000,
-        rpn_post_nms_top_n_test=2500,
-        box_detections_per_img=1000,
+        rpn_pre_nms_top_n_train=8000, rpn_pre_nms_top_n_test=8000, # 10 000, 5000 was overkill
+        rpn_post_nms_top_n_train=4000, rpn_post_nms_top_n_test=4000, # 5 000 2500 overkill
+
+        box_detections_per_img=500, # test only (eval mode)
     )
-    '''
     '''
         rpn_pre_nms_top_n_train (int): number of proposals to keep before applying NMS during training
         rpn_pre_nms_top_n_test (int): number of proposals to keep before applying NMS during testing
@@ -797,7 +797,7 @@ if __name__ == "__main__":
     torch.cuda.empty_cache()
 
     #model_name = "F:/projekti/msc_sonar_models/saved_model_epoch30.pt"
-    #model.load_state_dict(torch.load(model_name))
+    #model = torch.load(model_name))
 
     # construct an optimizer
     params = [p for p in model.parameters() if p.requires_grad]
@@ -805,12 +805,12 @@ if __name__ == "__main__":
 
     lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, # reduced step size, not using rn
                                                    step_size=25,
-                                                   gamma=0.3)
+                                                   gamma=0.5)
 
     # max batch is 6 with resnet50 | 10 resnet18 (usually train is 2x dev or test)
-    train_dataloader = DataLoader(train_dataset, batch_size=6,collate_fn=obj_collate_fn,shuffle=True, num_workers=1, drop_last=True)
-    dev_dataloader = DataLoader(dev_dataset, batch_size=1,collate_fn=obj_collate_fn,pin_memory=True, shuffle=True, num_workers=1, drop_last=True) # To make dev validation loss more stable with small sample sizes data augmentation can be used
-    test_dataloader = DataLoader(test_dataset, batch_size=1,collate_fn=obj_collate_fn,pin_memory=True, shuffle=True, num_workers=1, drop_last=True)
+    train_dataloader = DataLoader(train_dataset, batch_size=4,collate_fn=obj_collate_fn,shuffle=True, num_workers=1, drop_last=True)
+    dev_dataloader = DataLoader(dev_dataset, batch_size=4,collate_fn=obj_collate_fn,pin_memory=True, shuffle=True, num_workers=1, drop_last=True) # To make dev validation loss more stable with small sample sizes data augmentation can be used
+    test_dataloader = DataLoader(test_dataset, batch_size=4,collate_fn=obj_collate_fn,pin_memory=True, shuffle=True, num_workers=1, drop_last=True)
 
     num_epochs = 1000
     best_eval_loss = 1
@@ -860,14 +860,14 @@ if __name__ == "__main__":
             accuracy_list.append(accuracy)
             precision_list.append(precision)
             recall_list.append(recall)
-            if recall > best_recall:# and (recall+precision) > (best_recall+best_precision):
+            if (recall+precision) > (best_recall+best_precision):
                 print("Improvement, saved model!")
-                torch.save(model.state_dict(), "saved_model.pt")
+                torch.save(model, "saved_model.pt")
                 best_recall = recall
                 best_precision = precision
 
             if epoch % 10 == 0:
-                torch.save(model.state_dict(), "F:/projekti/msc_sonar_models/saved_model_epoch{}.pt".format(epoch))
+                torch.save(model, "F:/projekti/msc_sonar_models/saved_model_epoch{}.pt".format(epoch))
 
             plot_x_y(train_loss_list, val_loss_list, mode="loss_plot")
             plot_x_y(precision_list, recall_list, mode="precision_recall_curve")
@@ -887,22 +887,12 @@ if __name__ == "__main__":
                     print("---------------------------- now working on -------------------------------")
                     print(model_name)
                     print(global_eval_current_model_path)
-                    if "r18" in model_name:
-                        model = fasterrcnn_resnet18(pretrained_backbone=pretrain_imagenet,
-                                                    trainable_bb_layers=bb_train_val)
-                    else:
-                        model = torchvision.models.detection.fasterrcnn_resnet50_fpn(pretrained=pretrain_coco,
-                                                                                 pretrained_backbone=pretrain_imagenet)
-                    in_features = model.roi_heads.box_predictor.cls_score.in_features
-                    # replace the pre-trained head with a new one
-                    model.roi_heads.box_predictor = FastRCNNPredictor(in_features, num_classes)
-                    model.to(device)
+
                     torch.cuda.empty_cache()
-                    model.load_state_dict(torch.load(model_name))
+                    model = torch.load(model_name)
                     model.eval()
-                    coco_eval_obj, eval_stats = evaluate(model, test_dataloader, device=device,
-                                                                 eval_visualize=False,
-                                                                 score_threshold=0)
+                    coco_eval_obj, eval_stats = evaluate(model,test_dataloader,device=device,eval_visualize = True,score_threshold = 0)
+
                     precision_list = []
                     recall_list = []
                     for score_step in range(0,10):
