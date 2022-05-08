@@ -684,8 +684,8 @@ if __name__ == "__main__":
         A.RandomCrop(width=1000, height=400),
         #A.RandomResizedCrop(350),
         A.VerticalFlip(p=0.5),
-        A.RandomBrightnessContrast(p=0.3),
-        A.RandomGamma(p=0.3),
+        A.RandomBrightnessContrast(p=0.35),
+        A.RandomGamma(p=0.35),
         #A.Equalize(p=1),
     ], bbox_params=A.BboxParams(format='pascal_voc',label_fields=['class_labels']))
 
@@ -710,7 +710,7 @@ if __name__ == "__main__":
 
     pretrain_coco = False # mutually exclusive
     pretrain_imagenet = True # mutually exclusive
-    weight_decay_val = 0.0000 # 0.00005
+    weight_decay_val = 0 # 0.00005
     bb_train_val = 5
     num_classes = 4  # bike + anomaly + confirmed_victim + background (debris is not used anymore)
     lr_val = 0.0001 # 0.00005
@@ -728,29 +728,32 @@ if __name__ == "__main__":
     print("Weight decay:{}, trainable bb layers (5 is all):{}".format(weight_decay_val,bb_train_val))
 
     torch.backends.cudnn.benchmark = True
-    anchor_sizes = ((32,), (64,), (128,), (256,),(512,)) # original
-    #anchor_sizes = ((20,), (40,), (80,), (120,), (280,))
-    aspect_ratios = ((0.15, 0.33, 0.5, 0.66, 1.0, 1.5, 2),) * len(anchor_sizes) # height / width
+    #anchor_sizes = ((32,), (64,), (128,), (256,),(512,)) # original
+    anchor_sizes = ((20,), (40,), (60,), (90,), (280,)) # {20: 2, 40: 123, 60: 137, 90: 137, 280: 145}
+    # {0.15: 24, 0.24: 37, 0.33: 48, 0.5: 51, 0.66: 25, 1: 41, 1.5: 33, 2: 13}
+    aspect_ratios = ((0.15, 0.24, 0.33, 0.5, 0.66, 1.0, 1.5, 2),) * len(anchor_sizes) # height / width
     rpn_sonar_anchor_gen = AnchorGenerator(
         anchor_sizes, aspect_ratios
     )
-    '''
+
     model = fasterrcnn_resnet18(
         pretrained_backbone=pretrain_imagenet,
         trainable_bb_layers=bb_train_val, # 5 is all (none are frozen)
         rpn_anchor_generator=rpn_sonar_anchor_gen,
-        box_detections_per_img=280,
+        rpn_pre_nms_top_n_train=8000, rpn_pre_nms_top_n_test=8000,
+        rpn_post_nms_top_n_train=4000, rpn_post_nms_top_n_test=4000, # 4000 got good results on test
     )
+
     '''
     model = torchvision.models.detection.fasterrcnn_resnet50_fpn(
+        pretrained=pretrain_coco,
         pretrained_backbone=pretrain_imagenet,
         trainable_backbone_layers=bb_train_val, # 5 is all (none are frozen)
-        rpn_anchor_generator=rpn_sonar_anchor_gen,
-        rpn_pre_nms_top_n_train=8000, rpn_pre_nms_top_n_test=8000, # 10 000, 5000 was overkill
-        rpn_post_nms_top_n_train=4000, rpn_post_nms_top_n_test=4000, # 5 000 2500 overkill
-
-        box_detections_per_img=500, # test only (eval mode)
+        rpn_anchor_generator=rpn_sonar_anchor_gen, # cannot be pretrained on coco with this anchor generator
+        rpn_pre_nms_top_n_train=8000, rpn_pre_nms_top_n_test=8000,
+        rpn_post_nms_top_n_train=4000, rpn_post_nms_top_n_test=4000, # 4000 got good results on test
     )
+    '''
     '''
         rpn_pre_nms_top_n_train (int): number of proposals to keep before applying NMS during training
         rpn_pre_nms_top_n_test (int): number of proposals to keep before applying NMS during testing
@@ -828,6 +831,8 @@ if __name__ == "__main__":
         "F:/projekti/msc_sonar_models/r18_imagenet/",
         "F:/projekti/msc_sonar_models/scratch/"
     ]
+
+    vizualize_image_predictions_eval = False
     if True:
         for epoch in range(num_epochs):
             logger, train_stats = train_one_epoch(model, optimizer, train_dataloader, device, epoch, print_every=250)
@@ -891,7 +896,7 @@ if __name__ == "__main__":
                     torch.cuda.empty_cache()
                     model = torch.load(model_name)
                     model.eval()
-                    coco_eval_obj, eval_stats = evaluate(model,test_dataloader,device=device,eval_visualize = True,score_threshold = 0)
+                    coco_eval_obj, eval_stats = evaluate(model,test_dataloader,device=device,eval_visualize = vizualize_image_predictions_eval,score_threshold = 0)
 
                     precision_list = []
                     recall_list = []
