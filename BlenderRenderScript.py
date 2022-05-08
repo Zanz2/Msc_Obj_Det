@@ -193,8 +193,7 @@ def set_pose(pose_index):
         case = random.randint(1,3) 
         # 1 almost no air in body 
         # 2 some air in body
-        # 3 air in body 
-        case = 3
+        # 3 air in body
         if case == 1: pass
         if case == 2 or case == 3:
             move_obj(spine,(0.095211,-0.109305,-0.134542))
@@ -279,16 +278,16 @@ def randomize_sonar_angle(default=False): #effectively moves the light source up
     angle = ""
     distance = random.randint(1,4)
     if distance == 4:
-        z_pos = random.uniform(35, 75)
+        z_pos = random.uniform(40, 80)
         angle = "vblunt"
     elif distance == 3:
-        z_pos = random.uniform(15,35)
+        z_pos = random.uniform(20,40)
         angle = "blunt"
     elif distance == 2:
-        z_pos = random.uniform(8,15)
+        z_pos = random.uniform(8,20)
         angle = "sharp"
     else:
-        z_pos = random.uniform(1,8)
+        z_pos = random.uniform(2,8)
         angle = "vsharp"
     if not default:
         spot.location = mathutils.Vector((34.3238,1.32634,z_pos))
@@ -321,53 +320,6 @@ def randomize_body_position():
     ret_string = ret_string.replace("-","neg").replace(".","dot")
     return ret_string
 
-def auto_gain_control(input_img_arr,average_val,mode="rows"):
-    #https://chesapeaketech.com/wp-content/uploads/docs/SonarWiz7_UG/HTML/automatic_gain_control__agc_.html
-    defined_average = average_val 
-    if mode == "rows": #global row average shift
-        result_val = np.zeros(input_img_arr.shape)
-        img_arr_iter = input_img_arr
-        for index,row in enumerate(img_arr_iter):
-            result_val[index] = shift_average(row,defined_average)
-        return result_val
-    else: 
-        input_img_arr = np.transpose(input_img_arr)
-        result_val = np.zeros(input_img_arr.shape)
-        absolute_index = 0
-        img_arr_iter = input_img_arr
-        for row in img_arr_iter:
-            result_val[absolute_index] = shift_average(row,defined_average)
-            absolute_index += 1
-        result_val = np.transpose(result_val)
-        return result_val
-    
-def shift_average(input_list, target_average):
-    list_mean = np.nanmean(input_list)
-    if list_mean == 0: 
-        scale_factor = np.single(0)
-    else:
-        scale_factor = target_average/np.nanmean(input_list)
-    scale_factor = scale_factor.astype(float)
-    return_list = input_list * scale_factor
-    return return_list
-
-def noisy(image):
-    row, col, ch = image.shape
-    s_vs_p = 0.5
-    amount = 0.1
-    out = np.copy(image)
-    # Salt mode
-    num_salt = np.ceil(amount * image.size * s_vs_p)
-    coords = [np.random.randint(0, i - 1, int(num_salt)) for i in image.shape]
-    out[coords] = 1
-
-    # Pepper mode
-    num_pepper = np.ceil(amount * image.size * (1. - s_vs_p))
-    coords = [np.random.randint(0, i - 1, int(num_pepper)) for i in image.shape]
-    out[coords] = 0
-    return out
-
-
 def render_scene(image_name,debug=False):
     output_file = image_name
     output_file = "{}.png".format(output_file)
@@ -383,41 +335,6 @@ def render_scene(image_name,debug=False):
     scene.frame_set(1)
     bpy.ops.render.render(write_still=True)
 
-def apply_noise(image_name, display=False):
-    file_path_dest = 'C:/Users/zanza/Desktop/predictions/renders/'
-    img = cv2.imread(image_name, cv2.IMREAD_UNCHANGED)
-
-    noise_images = []
-    noise_images.append([img,(50,50)])
-    noise_images.append([img,(100,100)])
-    noise_images.append([img,(150,150)])
-    noise_images.append([img,(200,200)])
-
-    for noise_image,down_res in noise_images:
-        new_img = noise_image
-        target_avg_val = 100 # same values used in original jsf to image preprocessing
-        #new_img = auto_gain_control(new_img,target_avg_val,mode="rows")
-        new_img = auto_gain_control(new_img,target_avg_val,mode="columns")
-        #new_img = cv2.normalize(new_img, None, 0, 255, cv2.NORM_MINMAX)
-        
-        new_img = new_img.astype(np.uint8)
-        
-        # desired output size
-        new_img = noisy(new_img)
-        
-        height, width = (200, 200)
-        # Desired "pixelated" size
-        w, h = down_res
-        # Resize input to "pixelated" size
-        temp = cv2.resize(new_img, (w, h), interpolation=cv2.INTER_LINEAR)
-        # Initialize output image
-        new_img = cv2.resize(temp, (width, height), interpolation=cv2.INTER_NEAREST)
-
-        new_img = cv2.cvtColor(new_img, cv2.COLOR_BGR2GRAY)
-        if display: cv2.imshow("Noisy image", new_img)
-        if display: cv2.waitKey(0) # this freezes and crashes for some reason
-        cv2.imwrite("{}hi_avg_syn_img_{}x{}.png".format(file_path_dest,w,h), new_img)
-    
 def main():
     #widths of gt boxes min:23.80952380952381 max:603.3549783549784 avg:127.32661145509879
     #heights of gt boxes min:17.991004497751078 max:231.60173160173156 avg:50.13107902766274
@@ -427,15 +344,13 @@ def main():
     do_render = True
     do_debug_render = False
     noise = False
-    dynamic_sonar_angle = False
+    dynamic_sonar_angle = True
     dynamic_body_rotation = True
     dynamic_body_position = True
     randomize_sonar_angle(default=True)
     existing_images_list = []
 
-    set_pose(5)
-    return 
-    for x in range(8): # with all the current possible poses 384 possible combinations total
+    for x in range(20): 
         print("Started {}...".format(x))
         random_pose = random.randint(1,6)
         output_name = set_pose(random_pose)
