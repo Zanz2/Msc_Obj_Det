@@ -68,7 +68,7 @@ def noisy(image,mask,type):
         ret = np.round(np.random.normal(mid, 12, dist_size))
     if type == "body":
         low, mid, high = 90, 110, 180
-        ret = np.round(np.random.normal(mid, 20, dist_size))
+        ret = np.round(np.random.normal(mid, 15, dist_size))
     for i in range(mask.shape[0]):
         if np.any(mask[i, ] > 0):
             for j in range(mask.shape[1]):
@@ -91,7 +91,8 @@ def apply_pixelation(image_name, downsample_size): # downsample size = (w,h), it
     # Resize input to "pixelated" size
     temp = cv2.resize(new_img, (w, h), interpolation=cv2.INTER_LINEAR)
     # Initialize output image
-    new_img = cv2.resize(temp, (width, height), interpolation=cv2.INTER_AREA) # INTER_LINEAR, INTER_AREA, INTER_NEAREST, INTER_CUBIC, INTER_LANCZOS4
+    new_img = cv2.resize(temp, (width, height), interpolation=cv2.INTER_CUBIC)
+    # INTER_LINEAR(low-med outline artifacts), INTER_AREA(low-med artifacts), INTER_NEAREST(high outline artifacts), INTER_CUBIC(low outline artifacts), INTER_LANCZOS4 (low outline artifacts)
     return new_img
 
 def superimpose(input_background,input_foreground,visible_part_alpha=0.5):
@@ -124,10 +125,14 @@ def render_to_background(renders_folder,backgrounds_folder):
     list_of_anchors = []
     output_root = "{}/../outputs".format(renders_folder)
 
-    format_for_an_email_attachment = False
+    poses_in_seperate_folders = False
     save_img = False
-    presentation_mode = True
+    show_image_mode = True
     debug_mode = False
+
+    do_pixelation = True
+    do_alpha_blending = True
+    do_salt_and_pepper_noise = True
 
     for bg_file in os.listdir(backgrounds_folder):
         if bg_file.endswith(".png"):
@@ -135,7 +140,7 @@ def render_to_background(renders_folder,backgrounds_folder):
             current_bg = background_file
             for fg_file in os.listdir(renders_folder):
                 if fg_file.endswith(".png"):
-                    if presentation_mode: print(fg_file)
+                    if show_image_mode: print(fg_file)
                     render_file = os.path.join(renders_folder, fg_file)
                     current_render = render_file
 
@@ -149,9 +154,10 @@ def render_to_background(renders_folder,backgrounds_folder):
                     B = (255 * (1 - alpha) + B * alpha).astype(np.uint8)
                     foreground_whitealpha = cv2.merge((B, G, R))
                     foreground_whitealpha = cv2.cvtColor(foreground_whitealpha, cv2.COLOR_BGR2GRAY)
+                    #print("Unique gray values in this image: {}".format(np.unique(foreground_whitealpha)))
 
 
-                    grey_tresh_min = 100  # below this pixel value is shadow
+                    grey_tresh_min = 50  # below this pixel value is shadow
                     grey_tresh_max = 200  # above this pixel value is background
                     ret_bm, foreground_only_shadow_mask = cv2.threshold(foreground_whitealpha, grey_tresh_min, 255, cv2.THRESH_BINARY_INV)  # only shadow is white
                     ret_bm, foreground_mask = cv2.threshold(foreground_whitealpha, grey_tresh_max, 255, cv2.THRESH_BINARY_INV)  # entire body is white
@@ -174,7 +180,9 @@ def render_to_background(renders_folder,backgrounds_folder):
                             if xmin == -1: xmin = x
                             xmax = x
 
-                    foreground_pixelated = apply_pixelation(foreground_whitealpha, (700, 700)) # apply pixelation, for a more rough looking body
+                    foreground_pixelated = foreground_whitealpha
+                    if do_pixelation:
+                        foreground_pixelated = apply_pixelation(foreground_whitealpha, (700, 700)) # apply pixelation, for a more rough looking body
 
                     body_locs = np.where(foreground_only_body_mask != 0)
                     shadow_locs = np.where(foreground_only_shadow_mask != 0)
@@ -189,21 +197,31 @@ def render_to_background(renders_folder,backgrounds_folder):
                     foreground_body = cv2.cvtColor(foreground_body, cv2.COLOR_GRAY2BGRA)
                     foreground_shadow = cv2.cvtColor(foreground_shadow, cv2.COLOR_GRAY2BGRA)
 
-                    background = superimpose(background, foreground_body, visible_part_alpha=0.3)
-                    background = superimpose(background, foreground_shadow, visible_part_alpha=0.5)
-                    #background = cv2.rectangle(background, (xmin,ymin), (xmax,ymax), (0, 0, 255), thickness=1) # bbox visualization
+                    if do_alpha_blending:
+                        background = superimpose(background, foreground_body, visible_part_alpha=0.3)
+                        background = superimpose(background, foreground_shadow, visible_part_alpha=0.5)
+                    else:
+                        background = superimpose(background, foreground_body, visible_part_alpha=1)
+                        background = superimpose(background, foreground_shadow, visible_part_alpha=1)
 
+                    background_salt_and_pepper = cv2.cvtColor(background, cv2.COLOR_BGR2GRAY)
+                    if do_salt_and_pepper_noise:
+                        background_salt_and_pepper = noisy(background_salt_and_pepper, mask=foreground_only_shadow_mask, type="shadow")
+                        background_salt_and_pepper = noisy(background_salt_and_pepper, mask=foreground_only_body_mask, type="body")
+
+
+                    # background = cv2.rectangle(background, (xmin,ymin), (xmax,ymax), (0, 0, 255), thickness=1) # TODO remove bbox visualization
                     fg_prefix = fg_file.replace(".png","")
                     bg_prefix = bg_file.split("_")[0]
 
-                    if format_for_an_email_attachment: img_loc = "{}/{}/{}_bg_{}.png".format(output_root,fg_prefix,fg_prefix,bg_prefix)
+                    if poses_in_seperate_folders: img_loc = "{}/{}/{}_bg_{}.png".format(output_root,fg_prefix,fg_prefix,bg_prefix)
                     img_loc_all = "{}/all/{}_bg_{}.png".format(output_root,fg_prefix,bg_prefix)
                     img_name = "{}_bg_{}.png".format(fg_prefix,bg_prefix)
-                    if format_for_an_email_attachment and not os.path.exists("{}/{}/".format(output_root,fg_prefix)):
+                    if poses_in_seperate_folders and not os.path.exists("{}/{}/".format(output_root,fg_prefix)):
                        os.makedirs("{}/{}/".format(output_root,fg_prefix))
                     if not os.path.exists("{}/all/".format(output_root)):
                         os.makedirs("{}/all/".format(output_root))
-                    if save_img and format_for_an_email_attachment: cv2.imwrite(img_loc, background,[cv2.IMWRITE_PNG_COMPRESSION, 0])
+                    if save_img and poses_in_seperate_folders: cv2.imwrite(img_loc, background,[cv2.IMWRITE_PNG_COMPRESSION, 0])
                     if save_img: cv2.imwrite(img_loc_all, background,[cv2.IMWRITE_PNG_COMPRESSION, 0])
 
                     bbox_dict = {
@@ -215,19 +233,16 @@ def render_to_background(renders_folder,backgrounds_folder):
                         "label": "confirmed_body"
                     }
                     list_of_anchors.append(bbox_dict)
-                    if presentation_mode or (debug_mode and (xmin == -1 or ymin == -1 or xmax == -1 or ymax == -1)):
+                    if show_image_mode or (debug_mode and (xmin == -1 or ymin == -1 or xmax == -1 or ymax == -1)):
                         # display the image
-                        if presentation_mode:
+                        if show_image_mode:
                             cv2.imshow("Transparent to white image", foreground_whitealpha)
                             cv2.waitKey(0)
                             cv2.destroyAllWindows()
-                            cv2.imshow("(original) Superimposed body - shadow alpha", background)
+                            cv2.imshow("Background with pixelation({}) and body and shadow alpha({})".format(do_pixelation,do_alpha_blending), background)
                             cv2.waitKey(0)
                             cv2.destroyAllWindows()
-                            noisy_image = cv2.cvtColor(background, cv2.COLOR_BGR2GRAY)
-                            noisy_image = noisy(noisy_image,mask=foreground_only_shadow_mask, type="shadow")
-                            noisy_image = noisy(noisy_image, mask=foreground_only_body_mask, type="body")
-                            cv2.imshow("(original) + Salt and pepper noise", noisy_image)
+                            cv2.imshow("Previous background with salt and pepper noise({})".format(do_salt_and_pepper_noise), background_salt_and_pepper)
                             cv2.waitKey(0)
                             cv2.destroyAllWindows()
                             sys.exit(0)

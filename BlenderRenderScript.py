@@ -274,7 +274,7 @@ def randomize_sonar_angle(default=False): #effectively moves the light source up
     spot = bpy.data.objects['Spot']
     bpy.data.objects['Spot'].select_set(True)
     bpy.ops.object.mode_set(mode="OBJECT")
-    # C.object.data.cutoff_distance = 70 # fixes cycles render engine light distance
+    # C.object.data.cutoff_distance = 100 # fixes cycles render engine light distance
     # C.object.data.falloff_type = "CONSTANT"
     angle = ""
     distance = random.randint(1,4)
@@ -290,11 +290,13 @@ def randomize_sonar_angle(default=False): #effectively moves the light source up
     else:
         z_pos = random.uniform(5,10)
         angle = "vsharp"
+    #body_y = bpy.data.objects['LightTrackObj'].location[1] # so that sonar rays are always perpendicular to body, like in real images
+    #print(body_y) # i added a constraint trough the GUI, so the 0 y here gets ignored anyway, and the Y of the body is copied
     if not default:
-        spot.location = mathutils.Vector((34.3238,1.32634,z_pos))
+        spot.location = mathutils.Vector((34.3238,0,z_pos))
         return angle
     if default: 
-        spot.location = mathutils.Vector((34.3238,1.32634,30.3847))
+        spot.location = mathutils.Vector((34.3238,0,30)) # 30 z is default
         return "blunt"
     
 def randomize_body_rotation():
@@ -315,7 +317,7 @@ def randomize_body_position():
     big_bone = hbp.bones['Bone']
     rand_x = random.uniform(-7, 7)
     rand_y = random.uniform(-7, 8) # -7 = -0.2z | 8 = 0.38z
-    yRange = 8+7
+    yRange = 8 + 7
     zRange = 0.38 + 0.2  
     newZ = (((rand_y + 7) * zRange) / yRange) - 0.2 # this fixes a bug where
     # even though the only movement axis was y, z is modified anyway
@@ -327,7 +329,7 @@ def randomize_body_position():
     ret_string = ret_string.replace("-","neg").replace(".","dot")
     return ret_string
 
-def render_scene(image_name,debug=False):
+def render_scene(image_name,debug=False,frame=1):
     output_file = image_name
     output_file = "{}.png".format(output_file)
     if debug:
@@ -339,7 +341,7 @@ def render_scene(image_name,debug=False):
     bpy.context.scene.render.resolution_y = 1000
 
     scene = bpy.context.scene
-    scene.frame_set(1)
+    scene.frame_set(frame)
     bpy.ops.render.render(write_still=True)
 
 def main():
@@ -348,8 +350,9 @@ def main():
     print("start script")
     output_folder = 'C:/Users/zanza/Desktop/predictions/renders/generated/transparent_bg/renders/'
     debug_folder = 'C:/Users/zanza/Desktop/predictions/renders/generated/transparent_bg/debug/'
-    do_render = False
     do_debug_render = False
+    
+    do_render = True
     dynamic_sonar_angle = True
     dynamic_body_rotation = True
     dynamic_body_position = True
@@ -357,9 +360,9 @@ def main():
     existing_images_list = []
     
     # pos 5_1 is most common with changes
-    for x in range(1): 
+    for x in range(28): 
         print("Started {}...".format(x))
-        random_pose = random.randint(3,5)
+        random_pose = random.randint(1,3)
         
         output_name = set_pose(random_pose)
         debug_name = output_name
@@ -380,7 +383,7 @@ def main():
             if do_debug_render and debug_name not in '\t'.join(existing_images_list):
                 output_file_debug = "{}{}".format(debug_folder,debug_name)
                 render_scene(output_file_debug,debug=True)
-            render_scene(output_file)
+            render_scene(output_file,frame=100)
             existing_images_list.append(output_name)
         print("DONE: {}".format(output_name))
 
