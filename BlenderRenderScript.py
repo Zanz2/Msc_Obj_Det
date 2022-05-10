@@ -8,13 +8,6 @@ import subprocess
 import sys
 import random
 
-# path to python.exe
-#python_exe = os.path.join(sys.prefix, 'bin', 'python.exe')
-#py_lib = os.path.join(sys.prefix, 'lib', 'site-packages','pip')
-
-# install opencv
-#subprocess.call([python_exe, py_lib, "install", "opencv_python"])
-
 def set_pose(pose_index):
     deselect_all()
     bpy.data.objects['metarig'].select_set(True)
@@ -81,14 +74,14 @@ def set_pose(pose_index):
     
     main_pose = pose_index
     base_name = "position{}_".format(main_pose)
-    
-    if main_pose == 1:   
+    '''
+    if main_pose == -1: # POSE NOT APPLICABLE; SKIP
         case = random.randint(1,3)
         if case == 1: rotate_obj(neck,(-6.88033,-0.147892,0.363392)) # head facing up
         if case == 2: rotate_obj(neck,(-13.516,84.3889,-7.39118)) # head facing left
         if case == 3: rotate_obj(neck,(38.8165,-98.2523,-46.5987)) # head facing right
         base_name = "{}head{}_".format(base_name,case)
-        case = random.randint(1,4)
+        case = random.randint(1,3)
         if case == 1: pass # body is making normal contact with ground
         if case == 2: move_obj(big_bone,(0.0,0.001331,-0.034491)) # body is deeper inside floor
         if case == 3: move_obj(big_bone,(0.0,0.002889,-0.074915)) # body is very deep inside floor
@@ -107,7 +100,7 @@ def set_pose(pose_index):
             rotate_obj(spine,(-19.8858,0.000015,-0.000008))
         base_name = "{}bloating{}_".format(base_name,case)
             
-    if main_pose == 2:
+    if main_pose == -1: # POSE NOT APPLICABLE; SKIP
         rotate_obj(big_bone,(-6.66301,180,0)) # put body on stomach
         move_obj(ik_l_hand,(-0.002707,-0.130974,-0.107922))
         move_obj(ik_r_hand,(0.000987,-0.127867,-0.108482))
@@ -116,7 +109,7 @@ def set_pose(pose_index):
         if case == 2: rotate_obj(neck,(30.959,58.6218,26.5363)) # head facing left
         if case == 3: rotate_obj(neck,(28,-60.8972,-25.2778)) # head facing right
         base_name = "{}head{}_".format(base_name,case)
-        case = random.randint(1,4)
+        case = random.randint(1,3)
         if case == 1: pass # body is making normal contact with ground
         if case == 2: move_obj(big_bone,(0.0,0.001331,-0.034491)) # body is deeper inside floor
         if case == 3: move_obj(big_bone,(0.0,0.002889,-0.074915)) # body is very deep inside floor
@@ -134,8 +127,8 @@ def set_pose(pose_index):
             move_obj(spine,(-3.06414e-08,0.029272,-0.271292),mode="increment") # significant bloating is occuring
             rotate_obj(spine,(19.8858,0.000015,-0.000008))
         base_name = "{}bloating{}_".format(base_name,case)
-        
-    if main_pose == 3:
+    '''
+    if main_pose == 1:
         rotate_obj(big_bone,(0,-90,0)) # put body on right side
         move_obj(big_bone,(0,-0.006503,0.168619))
         
@@ -148,14 +141,14 @@ def set_pose(pose_index):
         move_obj(spine,(-0.007817,0.012015,-0.005908))
         rotate_obj(neck,(0.846842,-1.49348,16.4443))
         
-        case = random.randint(1,4)
+        case = random.randint(1,3)
         if case == 1: pass # body is making normal contact with ground
         if case == 2: move_obj(big_bone,(0.0,0.001331,-0.034491),mode="increment") # body is deeper inside floor
         if case == 3: move_obj(big_bone,(0.0,0.002889,-0.074915),mode="increment") # body is very deep inside floor
         if case == 4: move_obj(big_bone,(0.0,0.004458,-0.11559),mode="increment") # body is almost covered
         base_name = "{}groundcntct{}_".format(base_name,case)
         
-    if main_pose == 4:
+    if main_pose == 2:
         rotate_obj(big_bone,(0,90,0)) # put body on left side
         move_obj(big_bone,(0,-0.006295,0.163217))
         
@@ -168,14 +161,14 @@ def set_pose(pose_index):
         move_obj(spine,(-0.006417,-0.00024,0))
         rotate_obj(neck,(0,1.34564,-13.0188))
         
-        case = random.randint(1,4)
+        case = random.randint(1,3)
         if case == 1: pass # body is making normal contact with ground
         if case == 2: move_obj(big_bone,(0.0,0.001331,-0.034491),mode="increment") # body is deeper inside floor
         if case == 3: move_obj(big_bone,(0.0,0.002889,-0.074915),mode="increment") # body is very deep inside floor
         if case == 4: move_obj(big_bone,(0.0,0.004458,-0.11559),mode="increment") # body is almost covered
         base_name = "{}groundcntct{}_".format(base_name,case)
         
-    if main_pose == 5:
+    if main_pose == 3:
         rotate_obj(big_bone,(0,180,0)) # put body face down
         move_obj(big_bone,(0,-0.024475,0.634623))
         
@@ -184,10 +177,13 @@ def set_pose(pose_index):
         move_obj(ik_l_heel_anch,(0.266225,0.564204,-0.631638))
         move_obj(ik_r_heel_anch,(-0.098696,0.609837,-0.657878))
         
-        move_obj(ik_l_hand,(-0.074807,-0.497231,-0.644256))
-        move_obj(ik_r_hand,(-0.081019,-0.503151,-0.673953))
+        move_obj(ik_l_hand,(-0.07491,-0.603619,-0.648358))
+        move_obj(ik_r_hand,(-0.080987,-0.594779,-0.677487))
+        move_obj(ik_l_hand_anch,(0.315841,-0.005707,0.385657))
+        move_obj(ik_r_hand_anch,(-0.561492,-0.00071,0.227132488))
         
-        move_obj(spine,(0.095211,-0.081772,-0.059836))
+        move_obj(spine,(0.095211,-0.154213,0.2357))
+        rotate_obj(spine,(8.41567,-0.000007,0.000003))
         rotate_obj(neck,(33.2038,1.26253,-1.15656))
         
         case = random.randint(1,3) 
@@ -196,8 +192,8 @@ def set_pose(pose_index):
         # 3 air in body
         if case == 1: pass
         if case == 2 or case == 3:
-            move_obj(spine,(0.095211,-0.109305,-0.134542))
-            rotate_obj(spine,(-41.5614,0.000027,-0.000026))
+            move_obj(spine,(0.095211,-0.027949,0.137238))
+            rotate_obj(spine,(6.41438,-0.000002,0.000001))
             move_obj(ik_l_hand_anch,(-0.085021,0.0321,0.511855))
             move_obj(ik_r_hand_anch,(-0.222251,0.048074,0.414634))
         if case == 3:
@@ -209,20 +205,25 @@ def set_pose(pose_index):
     
     # 6.suspended in water face up is rare in real life, because of limb weight, so it is not implemented
     
+    # arms have a range of 0.6
+    # legs have a range of 0.8
+    
+    if random.randint(0,1) == 1:
+        movements = random.randint(1,3)
+        ik_r_heel = hbp.bones['IK.heel.R']
+        ik_l_heel = hbp.bones['IK.heel.L']
+        ik_r_hand = hbp.bones['IK.hand.R']
+        ik_l_hand = hbp.bones['IK.hand.L']
+        limb_array = [(ik_r_heel,0.6),(ik_l_heel,0.6),(ik_r_hand,0.4),(ik_l_hand,0.4)]
+        random.shuffle(limb_array)
+        for x in range(movements):
+            obj = limb_array[x][0]
+            range_limb = random.uniform(-limb_array[x][1],limb_array[x][1])
+            move_obj(obj,(range_limb,0,range_limb),mode="increment")
+            print("Added limb variations")
+        
+        
     return base_name
-    
-    big_bone = hbp.bones['Bone'] # anchor to move the entire body and everything globally (ignores ik constraints)
-    neck = hbp.bones['spine.004']  # this is useful for rotations of the neck
-    spine = hbp.bones['spine'] # base body, parent
-    ik_r_heel = hbp.bones['IK.heel.R']
-    ik_l_heel = hbp.bones['IK.heel.L']
-    ik_r_hand = hbp.bones['IK.hand.R']
-    ik_l_hand = hbp.bones['IK.hand.L']
-    
-    ik_r_heel_anch = hbp.bones['IK.knee.R']
-    ik_l_heel_anch = hbp.bones['IK.knee.L']
-    ik_r_hand_anch = hbp.bones['IK.elbow.R']
-    ik_l_hand_anch = hbp.bones['IK.elbow.L']
 
     
 def move_obj(obj,xyz_tuple,mode="absolute"): # (x,y,z) to be incremented 
@@ -284,10 +285,10 @@ def randomize_sonar_angle(default=False): #effectively moves the light source up
         z_pos = random.uniform(20,40)
         angle = "blunt"
     elif distance == 2:
-        z_pos = random.uniform(8,20)
+        z_pos = random.uniform(10,20)
         angle = "sharp"
     else:
-        z_pos = random.uniform(2,8)
+        z_pos = random.uniform(5,10)
         angle = "vsharp"
     if not default:
         spot.location = mathutils.Vector((34.3238,1.32634,z_pos))
@@ -313,8 +314,14 @@ def randomize_body_position():
     hbp = bpy.data.objects['metarig'].pose
     big_bone = hbp.bones['Bone']
     rand_x = random.uniform(-7, 7)
-    rand_y = random.uniform(-7, 7)
-    current_z = big_bone.location[2]
+    rand_y = random.uniform(-7, 8) # -7 = -0.2z | 8 = 0.38z
+    yRange = 8+7
+    zRange = 0.38 + 0.2  
+    newZ = (((rand_y + 7) * zRange) / yRange) - 0.2 # this fixes a bug where
+    # even though the only movement axis was y, z is modified anyway
+    # this offset fixes that
+    current_z = big_bone.location[2] + newZ
+    print("Move: y:{}, calc z:{}".format(rand_y,newZ))
     move_obj(big_bone,(rand_x,rand_y,current_z))
     ret_string = "{}x_{}y_".format(round(rand_x, 2),round(rand_y, 2))
     ret_string = ret_string.replace("-","neg").replace(".","dot")
@@ -341,18 +348,19 @@ def main():
     print("start script")
     output_folder = 'C:/Users/zanza/Desktop/predictions/renders/generated/transparent_bg/renders/'
     debug_folder = 'C:/Users/zanza/Desktop/predictions/renders/generated/transparent_bg/debug/'
-    do_render = True
+    do_render = False
     do_debug_render = False
-    noise = False
     dynamic_sonar_angle = True
     dynamic_body_rotation = True
     dynamic_body_position = True
     randomize_sonar_angle(default=True)
     existing_images_list = []
-
-    for x in range(20): 
+    
+    # pos 5_1 is most common with changes
+    for x in range(1): 
         print("Started {}...".format(x))
-        random_pose = random.randint(1,6)
+        random_pose = random.randint(3,5)
+        
         output_name = set_pose(random_pose)
         debug_name = output_name
         
@@ -367,7 +375,6 @@ def main():
             angle = randomize_sonar_angle()
             output_name = "{}{}".format(output_name,angle)
             
-        if noise: apply_noise(output_file)
         if do_render and output_name not in existing_images_list:
             output_file = "{}{}".format(output_folder,output_name)
             if do_debug_render and debug_name not in '\t'.join(existing_images_list):
@@ -375,6 +382,6 @@ def main():
                 render_scene(output_file_debug,debug=True)
             render_scene(output_file)
             existing_images_list.append(output_name)
-        
+        print("DONE: {}".format(output_name))
 
 main()
