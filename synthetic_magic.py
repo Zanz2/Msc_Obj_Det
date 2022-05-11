@@ -1,4 +1,3 @@
-import copy
 import os
 import csv
 import random
@@ -125,10 +124,10 @@ def render_to_background(renders_folder,backgrounds_folder):
     list_of_anchors = []
     output_root = "{}/../outputs".format(renders_folder)
 
+    debug_mode = False
     poses_in_seperate_folders = False
     save_img = False
     show_image_mode = True
-    debug_mode = False
 
     do_pixelation = True
     do_alpha_blending = True
@@ -245,7 +244,7 @@ def render_to_background(renders_folder,backgrounds_folder):
                             cv2.imshow("Previous background with salt and pepper noise({})".format(do_salt_and_pepper_noise), background_salt_and_pepper)
                             cv2.waitKey(0)
                             cv2.destroyAllWindows()
-                            sys.exit(0)
+                            break
             print("Synthetic data for background file {} finished".format(bg_file))
 
     bbox_file = "{}/bounding_boxes.csv".format(output_root)
@@ -268,4 +267,4 @@ def render_to_background(renders_folder,backgrounds_folder):
 
 
 #anchor_box_analyze()
-render_to_background("../../predictions/renders/generated/transparent_bg/renders/","../../predictions/renders/generated/transparent_bg/bg")
+#render_to_background("../../predictions/renders/generated/transparent_bg/renders/","../../predictions/renders/generated/transparent_bg/bg") # comment when running for real

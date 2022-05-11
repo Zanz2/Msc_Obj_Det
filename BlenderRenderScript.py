@@ -8,6 +8,10 @@ import subprocess
 import sys
 import random
 
+
+sys.path.append( 'C:/Users/zanza/Desktop/MSC_work/Msc_Obj_Det/' )
+import synthetic_magic
+
 def set_pose(pose_index):
     deselect_all()
     bpy.data.objects['metarig'].select_set(True)
@@ -141,13 +145,6 @@ def set_pose(pose_index):
         move_obj(spine,(-0.007817,0.012015,-0.005908))
         rotate_obj(neck,(0.846842,-1.49348,16.4443))
         
-        case = random.randint(1,3)
-        if case == 1: pass # body is making normal contact with ground
-        if case == 2: move_obj(big_bone,(0.0,0.001331,-0.034491),mode="increment") # body is deeper inside floor
-        if case == 3: move_obj(big_bone,(0.0,0.002889,-0.074915),mode="increment") # body is very deep inside floor
-        if case == 4: move_obj(big_bone,(0.0,0.004458,-0.11559),mode="increment") # body is almost covered
-        base_name = "{}groundcntct{}_".format(base_name,case)
-        
     if main_pose == 2:
         rotate_obj(big_bone,(0,90,0)) # put body on left side
         move_obj(big_bone,(0,-0.006295,0.163217))
@@ -160,15 +157,13 @@ def set_pose(pose_index):
         
         move_obj(spine,(-0.006417,-0.00024,0))
         rotate_obj(neck,(0,1.34564,-13.0188))
+    
         
-        case = random.randint(1,3)
-        if case == 1: pass # body is making normal contact with ground
-        if case == 2: move_obj(big_bone,(0.0,0.001331,-0.034491),mode="increment") # body is deeper inside floor
-        if case == 3: move_obj(big_bone,(0.0,0.002889,-0.074915),mode="increment") # body is very deep inside floor
-        if case == 4: move_obj(big_bone,(0.0,0.004458,-0.11559),mode="increment") # body is almost covered
-        base_name = "{}groundcntct{}_".format(base_name,case)
+    if main_pose == 5 or main_pose == 4 or main_pose == 3:
+        # 1 almost no air in body  (most common)
+        # 2 some air in body
+        # 3 air in body (rare, possible when someone is weighed down)
         
-    if main_pose == 3:
         rotate_obj(big_bone,(0,180,0)) # put body face down
         move_obj(big_bone,(0,-0.024475,0.634623))
         
@@ -186,22 +181,24 @@ def set_pose(pose_index):
         rotate_obj(spine,(8.41567,-0.000007,0.000003))
         rotate_obj(neck,(33.2038,1.26253,-1.15656))
         
-        case = random.randint(1,3) 
-        # 1 almost no air in body 
-        # 2 some air in body
-        # 3 air in body
-        if case == 1: pass
-        if case == 2 or case == 3:
-            move_obj(spine,(0.095211,-0.027949,0.137238))
-            rotate_obj(spine,(6.41438,-0.000002,0.000001))
-            move_obj(ik_l_hand_anch,(-0.085021,0.0321,0.511855))
-            move_obj(ik_r_hand_anch,(-0.222251,0.048074,0.414634))
-        if case == 3:
-            move_obj(spine,(0.095211,-0.570773,-0.315036))
-            rotate_obj(spine,(-61.9236,0.000032,-0.000044))
-            move_obj(ik_l_hand,(-0.134185,-0.45768,-0.15469))
-            move_obj(ik_r_hand,(0.045181,-0.480865,-0.202725))
-        base_name = "{}floating{}_".format(base_name,case)
+    if main_pose == 4 or main_pose == 3:
+        move_obj(spine,(0.095211,-0.027949,0.137238))
+        rotate_obj(spine,(6.41438,-0.000002,0.000001))
+        move_obj(ik_l_hand_anch,(-0.085021,0.0321,0.511855))
+        move_obj(ik_r_hand_anch,(-0.222251,0.048074,0.414634))
+        
+    if main_pose == 3:
+        move_obj(spine,(0.095211,-0.570773,-0.315036))
+        rotate_obj(spine,(-61.9236,0.000032,-0.000044))
+        move_obj(ik_l_hand,(-0.134185,-0.45768,-0.15469))
+        move_obj(ik_r_hand,(0.045181,-0.480865,-0.202725))
+    
+    case = random.randint(1,4)
+    if case == 1: pass # body is making normal contact with ground
+    if case == 2: move_obj(big_bone,(0,0.001331,-0.5),mode="increment") # body is deeper inside floor
+    if case == 3: move_obj(big_bone,(0,0.003889,-0.10),mode="increment") # body is very deep inside floor
+    if case == 4: move_obj(big_bone,(0,0.005458,-0.2),mode="increment") # even deeper
+    base_name = "{}groundcntct{}_".format(base_name,case)
     
     # 6.suspended in water face up is rare in real life, because of limb weight, so it is not implemented
     
@@ -221,7 +218,6 @@ def set_pose(pose_index):
             range_limb = random.uniform(-limb_array[x][1],limb_array[x][1])
             move_obj(obj,(range_limb,0,range_limb),mode="increment")
             print("Added limb variations")
-        
         
     return base_name
 
@@ -344,26 +340,25 @@ def render_scene(image_name,debug=False,frame=1):
     scene.frame_set(frame)
     bpy.ops.render.render(write_still=True)
 
-def main():
+def generate_renders(output_folder,debug_folder):
     #widths of gt boxes min:23.80952380952381 max:603.3549783549784 avg:127.32661145509879
     #heights of gt boxes min:17.991004497751078 max:231.60173160173156 avg:50.13107902766274
     print("start script")
-    output_folder = 'C:/Users/zanza/Desktop/predictions/renders/generated/transparent_bg/renders/'
-    debug_folder = 'C:/Users/zanza/Desktop/predictions/renders/generated/transparent_bg/debug/'
+    existing_images_list = []
+    randomize_sonar_angle(default=True)
     do_debug_render = False
     
-    do_render = True
+    do_render = False
     dynamic_sonar_angle = True
     dynamic_body_rotation = True
     dynamic_body_position = True
-    randomize_sonar_angle(default=True)
-    existing_images_list = []
+    n_images_to_generate = 1
     
     # pos 5_1 is most common with changes
-    for x in range(28): 
-        print("Started {}...".format(x))
-        random_pose = random.randint(1,3)
-        
+    for x in range(n_images_to_generate): 
+        print("Started {}/{}...".format(x,n_images_to_generate))
+        random_pose = max(random.randint(1,5), random.randint(1,5), random.randint(1,5))
+        # 5 is most likely, 4 is less, 3 is less, 1 and 2 are rare
         output_name = set_pose(random_pose)
         debug_name = output_name
         
@@ -387,4 +382,10 @@ def main():
             existing_images_list.append(output_name)
         print("DONE: {}".format(output_name))
 
-main()
+
+save_folder = 'C:/Users/zanza/Desktop/predictions/renders/generated/transparent_bg/renders/'
+save_debug_folder = 'C:/Users/zanza/Desktop/predictions/renders/generated/transparent_bg/debug/'
+bg_folder = 'C:/Users/zanza/Desktop/predictions/renders/generated/transparent_bg/bg'
+
+generate_renders(save_folder,save_debug_folder)
+#synthetic_magic.render_to_background(save_folder,bg_folder) # comment when testing
