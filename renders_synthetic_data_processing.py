@@ -1,7 +1,6 @@
 import os
 import csv
 import random
-
 import cv2
 import numpy as np
 import pandas as pd
@@ -61,7 +60,7 @@ def anchor_box_analyze():
 def remove_images_from_folder(image_folder,remove_list_file):
     lines = []
     counter = 0
-    prompt = input("Deleting images from folder {}, are you sure? y/n".format(image_folder))
+    prompt = input("Deleting images from folder {}, are you sure? y/n: ".format(image_folder))
     if prompt != "y": return
     with open(remove_list_file) as file:
         lines = file.readlines()
@@ -74,6 +73,12 @@ def remove_images_from_folder(image_folder,remove_list_file):
 
     print("{} out of {} deleted".format(counter,len(lines)))
     return counter > 0
+
+def bool_to_str(boolean_val):
+    if boolean_val:
+        return "1"
+    else:
+        return "0"
 
 def noisy(image,mask,type):
     output = image.copy()
@@ -159,11 +164,10 @@ def render_to_background(renders_folder,backgrounds_folder):
     samples_counter = 0
     for fg_file in os.listdir(renders_folder):
         if not fg_file.endswith(".png"): continue
-        if show_image_mode: print(fg_file)
         render_file = os.path.join(renders_folder, fg_file)
         current_render = render_file
 
-        rand_index = random.randint(0,len(applicable_backgrounds))
+        rand_index = random.randint(0,len(applicable_backgrounds)-1)
         current_bg = applicable_backgrounds[rand_index]
         background = cv2.imread(current_bg)
         foreground_bbox = cv2.imread(current_render, cv2.IMREAD_UNCHANGED)
@@ -232,19 +236,26 @@ def render_to_background(renders_folder,backgrounds_folder):
 
 
         # background = cv2.rectangle(background, (xmin,ymin), (xmax,ymax), (0, 0, 255), thickness=1) # bbox visualization
-        fg_prefix = fg_file.replace(".png","")
-        bg_prefix = bg_file.split("_")[0]
+        fg_prefix = fg_file.replace(".png", "")
+        fg_prefix = "{}_pix{}_alpha{}_spnoise{}".format(fg_prefix,bool_to_str(do_pixelation),bool_to_str(do_alpha_blending),bool_to_str(do_salt_and_pepper_noise))
+        fg_prefix = "{:04d}_{}".format(samples_counter,fg_prefix)
+        bg_suffix = ""
+        if "_" in bg_file:
+            bg_suffix = bg_file.split("_")[-1] # gets something like 231.png or 034.png from our original naming convention
+            bg_suffix = bg_suffix.replace(".png", "")
 
-        if poses_in_seperate_folders: img_loc = "{}/{}/{}_bg_{}.png".format(output_root,fg_prefix,fg_prefix,bg_prefix)
-        img_loc_all = "{}/all/{}_bg_{}.png".format(output_root,fg_prefix,bg_prefix)
-        img_name = "{}_bg_{}.png".format(fg_prefix,bg_prefix)
+        img_name = "{}_bg{}.png".format(fg_prefix, bg_suffix)
+        if poses_in_seperate_folders: img_loc = "{}/{}/{}".format(output_root,fg_prefix,img_name)
+        img_loc_all = "{}/all/{}".format(output_root,img_name)
+
         if poses_in_seperate_folders and not os.path.exists("{}/{}/".format(output_root,fg_prefix)):
-           os.makedirs("{}/{}/".format(output_root,fg_prefix))
+            os.makedirs("{}/{}/".format(output_root,fg_prefix))
         if not os.path.exists("{}/all/".format(output_root)):
             os.makedirs("{}/all/".format(output_root))
+
         if save_img and poses_in_seperate_folders: cv2.imwrite(img_loc, background,[cv2.IMWRITE_PNG_COMPRESSION, 0])
         if save_img: cv2.imwrite(img_loc_all, background,[cv2.IMWRITE_PNG_COMPRESSION, 0])
-
+        print("{} Done".format(img_name))
         bbox_dict = {
             "image": img_name,
             "xmin": xmin,
@@ -275,10 +286,10 @@ def render_to_background(renders_folder,backgrounds_folder):
     if not os.path.isfile(bbox_file):
         print("Created bbox file since it didnt exist")
         file = open(bbox_file, "a+")
-        file.write('"image","xmin","ymin","xmax","ymax","label"\n')
         file.close()  # just create the file if it doenst exist
-    with open(bbox_file, 'a', newline='') as csvfile:
+    with open(bbox_file, 'w', newline='') as csvfile:
         csv_writer = csv.writer(csvfile, delimiter=',',quotechar='\"', quoting=csv.QUOTE_ALL)
+        csv_writer.writerow(["image","xmin","ymin","xmax","ymax","label"])
         for bbox in list_of_anchors:
             filename = bbox["image"]
             xmin = bbox["xmin"]
@@ -292,6 +303,6 @@ def render_to_background(renders_folder,backgrounds_folder):
 
 
 #anchor_box_analyze()
-#remove_images_from_folder("C:/Users/zanza/Desktop/MSC_work/Msc_Obj_Det/data/vott/run3_big/output/vott-csv-export/train_synthetic_bgs/","C:/Users/zanza/Desktop/MSC_work/Msc_Obj_Det/data/vott/run3_big/output/vott-csv-export/imgs_containing_bodies_list.txt")
+#remove_images_from_folder("C:/Users/zanza/Desktop/predictions/renders/generated/transparent_bg/bg_test_synthetic","C:/Users/zanza/Desktop/MSC_work/Msc_Obj_Det/data/vott/run3_big/output/vott-csv-export/imgs_containing_bodies_list.txt")
 
 render_to_background("C:/Users/zanza/Desktop/predictions/renders/generated/transparent_bg/renders/","C:/Users/zanza/Desktop/predictions/renders/generated/transparent_bg/bg") # comment when running for real

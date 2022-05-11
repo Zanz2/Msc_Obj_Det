@@ -77,7 +77,7 @@ def set_pose(pose_index):
     reset_body_pos()
     
     main_pose = pose_index
-    base_name = "position{}_".format(main_pose)
+    base_name = "pose{}_".format(main_pose)
     '''
     if main_pose == -1: # POSE NOT APPLICABLE; SKIP
         case = random.randint(1,3)
@@ -198,7 +198,7 @@ def set_pose(pose_index):
     if case == 2: move_obj(big_bone,(0,0.001331,-0.5),mode="increment") # body is deeper inside floor
     if case == 3: move_obj(big_bone,(0,0.003889,-0.10),mode="increment") # body is very deep inside floor
     if case == 4: move_obj(big_bone,(0,0.005458,-0.2),mode="increment") # even deeper
-    base_name = "{}groundcntct{}_".format(base_name,case)
+    base_name = "{}submrgd{}_".format(base_name,case)
     
     # 6.suspended in water face up is rare in real life, because of limb weight, so it is not implemented
     
@@ -218,6 +218,10 @@ def set_pose(pose_index):
             range_limb = random.uniform(-limb_array[x][1],limb_array[x][1])
             move_obj(obj,(range_limb,0,range_limb),mode="increment")
             print("Added limb variations")
+        base_name = "{}limbvar{}_".format(base_name,case)
+    else:
+        base_name = "{}nolimbvar{}_".format(base_name,case)
+            
         
     return base_name
 
@@ -293,7 +297,7 @@ def randomize_sonar_angle(default=False): #effectively moves the light source up
         return angle
     if default: 
         spot.location = mathutils.Vector((34.3238,0,30)) # 30 z is default
-        return "blunt"
+        return "default"
     
 def randomize_body_rotation():
     deselect_all()
@@ -303,7 +307,7 @@ def randomize_body_rotation():
     big_bone = hbp.bones['Bone']
     rand_degrees = random.randint(0,360)
     rotate_obj(big_bone,(False,False,rand_degrees))
-    return "{}zdegrees_".format(rand_degrees)
+    return "{}zdeg_".format(rand_degrees)
 
 def randomize_body_position():
     deselect_all()
@@ -377,7 +381,7 @@ def generate_renders(output_folder,debug_folder):
             output_file = "{}{}".format(output_folder,output_name)
             if do_debug_render and debug_name not in '\t'.join(existing_images_list):
                 output_file_debug = "{}{}".format(debug_folder,debug_name)
-                render_scene(output_file_debug,debug=True)
+                render_scene(output_file_debug,debug=True,frame=50)
             render_scene(output_file,frame=100)
             existing_images_list.append(output_name)
         print("DONE: {}".format(output_name))
