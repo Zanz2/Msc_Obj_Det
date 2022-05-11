@@ -321,7 +321,7 @@ def custom_evaluate(res_dict,targets,current_dict,images=[],visualize=False,IOU_
         pred_scores = dict_for_img["scores"]
         if True: # apply nms or not (mainly for debug)
             #print("Scores before nms {}".format(len(pred_scores)))
-            pred_boxes_mask = nms(boxes=dict_for_img["boxes"], scores=dict_for_img["scores"], iou_threshold=IOU_TRESHOLD)
+            pred_boxes_mask = nms(boxes=dict_for_img["boxes"], scores=dict_for_img["scores"], iou_threshold=0.4) # TODO testing 0.4 instead of 0.5
             pred_boxes = dict_for_img["boxes"][pred_boxes_mask].tolist()
             pred_labels = dict_for_img["labels"][pred_boxes_mask].tolist()
             pred_scores = pred_scores[pred_boxes_mask].tolist()
@@ -496,7 +496,7 @@ def _get_iou_types(model):
 
 
 @torch.inference_mode()
-def evaluate(model, data_loader, device, eval_visualize=False, score_threshold = 0):
+def evaluate(model, data_loader, device, eval_visualize=False, score_threshold=0):
     n_threads = torch.get_num_threads()
     # FIXME remove this and make paste_masks_in_image run on the GPU
     torch.set_num_threads(1)
@@ -711,9 +711,12 @@ if __name__ == "__main__":
     pretrain_coco = False # mutually exclusive
     pretrain_imagenet = True # mutually exclusive
     weight_decay_val = 0 # 0.00005
-    bb_train_val = 5
+    bb_train_val = 4
     num_classes = 4  # bike + anomaly + confirmed_victim + background (debris is not used anymore)
     lr_val = 0.0001 # 0.00005
+
+    # top options: resnet50 or resnet18
+    # bb_train_val 4 or use model from scratch
 
     print("Sum annotated bodies:{}, anomalies:{}, debris:{}, bikes:{}".format(c_cnf_body, c_anomaly, c_debris, c_bikes))
     print("Original shape:{}, new transformed shape:{}".format(train_dataset.get_image(21).shape,train_dataset[21][0].shape))
@@ -743,7 +746,6 @@ if __name__ == "__main__":
         rpn_pre_nms_top_n_train=8000, rpn_pre_nms_top_n_test=8000,
         rpn_post_nms_top_n_train=4000, rpn_post_nms_top_n_test=4000, # 4000 got good results on test
     )
-
     '''
     model = torchvision.models.detection.fasterrcnn_resnet50_fpn(
         pretrained=pretrain_coco,
@@ -833,6 +835,7 @@ if __name__ == "__main__":
     ]
 
     vizualize_image_predictions_eval = False
+    train_score_treshold = 0.4
     if True:
         for epoch in range(num_epochs):
             logger, train_stats = train_one_epoch(model, optimizer, train_dataloader, device, epoch, print_every=250)
@@ -841,7 +844,7 @@ if __name__ == "__main__":
             # update the learning rate
             lr_scheduler.step()
             # evaluate on the test dataset
-            coco_eval_obj, eval_stats = evaluate(model, dev_dataloader, device=device,eval_visualize=False)
+            coco_eval_obj, eval_stats = evaluate(model, dev_dataloader, device=device,eval_visualize=False,score_threshold=train_score_treshold)
             val_loss = eval_stats["loss"]
 
             train_loss_list.append(train_loss)
