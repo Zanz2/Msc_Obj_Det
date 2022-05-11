@@ -102,6 +102,7 @@ class SonarDataset(torch.utils.data.Dataset):
 
         #self.imgs = self.imgs[0:int(len(self.imgs)*0.1)] # MAKE IT FAST FOR DEBUGGING
 
+
         csv_boxes = pd.read_csv(csv_file)
 
         self.label2id = {
@@ -576,7 +577,7 @@ def evaluate(model, data_loader, device, eval_visualize=False, score_threshold=0
 if __name__ == "__main__":
     # laptop = "C:/Users/zanza/Desktop/MSC_work/Msc_Obj_Det/"
     # desktop = "C:/Users/Moji podatki/Desktop/github/Msc_Obj_Det/"
-    prefix1 = "C:/Users/Moji podatki/Desktop/github/Msc_Obj_Det/"
+    prefix1 = "C:/Users/zanza/Desktop/MSC_work/Msc_Obj_Det/"
     target = "conversions/vott_to_vgg_proj/empty_vgg_json.json"
     source = "conversions/vott_to_vgg_proj/source_vott_csv.csv"
     target_folder = prefix1+"data/vott/run3_big/input"
@@ -816,6 +817,7 @@ if __name__ == "__main__":
     train_dataloader = DataLoader(train_dataset, batch_size=4,collate_fn=obj_collate_fn,shuffle=True, num_workers=1, drop_last=True)
     dev_dataloader = DataLoader(dev_dataset, batch_size=4,collate_fn=obj_collate_fn,pin_memory=True, shuffle=True, num_workers=1, drop_last=True) # To make dev validation loss more stable with small sample sizes data augmentation can be used
     test_dataloader = DataLoader(test_dataset, batch_size=4,collate_fn=obj_collate_fn,pin_memory=True, shuffle=True, num_workers=1, drop_last=True)
+
 
     num_epochs = 1000
     best_eval_loss = 1
