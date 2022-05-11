@@ -5,7 +5,6 @@ import random
 import cv2
 import numpy as np
 import pandas as pd
-import sys
 
 def anchor_box_analyze():
     csv_boxes = pd.read_csv("data/vott/06_02_2022_BIG-export.csv")
@@ -58,6 +57,23 @@ def anchor_box_analyze():
     print("widths min:{} max:{} avg:{}".format(min_width,max_width,avg_width))
     print("heights min:{} max:{} avg:{}".format(min_height,max_height,avg_height))
     #print(search_string)
+
+def remove_images_from_folder(image_folder,remove_list_file):
+    lines = []
+    counter = 0
+    prompt = input("Deleting images from folder {}, are you sure? y/n".format(image_folder))
+    if prompt != "y": return
+    with open(remove_list_file) as file:
+        lines = file.readlines()
+        lines = [line.rstrip() for line in lines]
+    for image_file in os.listdir(image_folder):
+        if image_file.endswith(".png") and image_file in lines:
+            image_file_path = os.path.join(image_folder,image_file)
+            os.remove(image_file_path)
+            counter += 1
+
+    print("{} out of {} deleted".format(counter,len(lines)))
+    return counter > 0
 
 def noisy(image,mask,type):
     output = image.copy()
@@ -133,119 +149,127 @@ def render_to_background(renders_folder,backgrounds_folder):
     do_alpha_blending = True
     do_salt_and_pepper_noise = True
 
+    applicable_backgrounds = []
     for bg_file in os.listdir(backgrounds_folder):
         if bg_file.endswith(".png"):
             background_file = os.path.join(backgrounds_folder, bg_file)
-            current_bg = background_file
-            for fg_file in os.listdir(renders_folder):
-                if fg_file.endswith(".png"):
-                    if show_image_mode: print(fg_file)
-                    render_file = os.path.join(renders_folder, fg_file)
-                    current_render = render_file
+            applicable_backgrounds.append(background_file)
+    random.shuffle(applicable_backgrounds)
 
-                    background = cv2.imread(current_bg)
-                    foreground_bbox = cv2.imread(current_render, cv2.IMREAD_UNCHANGED)
+    samples_counter = 0
+    for fg_file in os.listdir(renders_folder):
+        if not fg_file.endswith(".png"): continue
+        if show_image_mode: print(fg_file)
+        render_file = os.path.join(renders_folder, fg_file)
+        current_render = render_file
 
-                    B, G, R, A = cv2.split(foreground_bbox)   # makes transparency white, for easier bbox detection
-                    alpha = A / 255
-                    R = (255 * (1 - alpha) + R * alpha).astype(np.uint8)
-                    G = (255 * (1 - alpha) + G * alpha).astype(np.uint8)
-                    B = (255 * (1 - alpha) + B * alpha).astype(np.uint8)
-                    foreground_whitealpha = cv2.merge((B, G, R))
-                    foreground_whitealpha = cv2.cvtColor(foreground_whitealpha, cv2.COLOR_BGR2GRAY)
-                    #print("Unique gray values in this image: {}".format(np.unique(foreground_whitealpha)))
+        rand_index = random.randint(0,len(applicable_backgrounds))
+        current_bg = applicable_backgrounds[rand_index]
+        background = cv2.imread(current_bg)
+        foreground_bbox = cv2.imread(current_render, cv2.IMREAD_UNCHANGED)
 
-
-                    grey_tresh_min = 50  # below this pixel value is shadow
-                    grey_tresh_max = 200  # above this pixel value is background
-                    ret_bm, foreground_only_shadow_mask = cv2.threshold(foreground_whitealpha, grey_tresh_min, 255, cv2.THRESH_BINARY_INV)  # only shadow is white
-                    ret_bm, foreground_mask = cv2.threshold(foreground_whitealpha, grey_tresh_max, 255, cv2.THRESH_BINARY_INV)  # entire body is white
-                    foreground_only_body_mask = cv2.bitwise_xor(foreground_only_shadow_mask,foreground_whitealpha) # extract out of the above only body by doing a xor
-                    ret_bm, foreground_only_body_mask = cv2.threshold(foreground_only_body_mask, grey_tresh_max, 255, cv2.THRESH_BINARY_INV)
-                    h = foreground_mask.shape[0]
-                    w = foreground_mask.shape[1]
-                    # loop over the image, pixel by pixel
-                    ymin, ymax, xmin, xmax = -1, -1, -1, -1
-                    for y in range(0, h): # bounding box calculation
-                        row = foreground_mask[y,:]
-                        mask = row > 200
-                        if np.any(mask):
-                            if ymin == -1: ymin = y
-                            ymax = y
-                    for x in range(0, w):
-                        column = foreground_mask[:,x]
-                        mask = column > 200
-                        if np.any(mask):
-                            if xmin == -1: xmin = x
-                            xmax = x
-
-                    foreground_pixelated = foreground_whitealpha
-                    if do_pixelation:
-                        foreground_pixelated = apply_pixelation(foreground_whitealpha, (700, 700)) # apply pixelation, for a more rough looking body
-
-                    body_locs = np.where(foreground_only_body_mask != 0)
-                    shadow_locs = np.where(foreground_only_shadow_mask != 0)
-                    white_image = np.ones((1000,1000), np.uint8)
-                    white_image = white_image * 255
-                    foreground_body = white_image.copy()
-                    foreground_shadow = white_image.copy()
-                    foreground_body[body_locs[0], body_locs[1]] = foreground_pixelated[body_locs[0], body_locs[1]]
-                    foreground_shadow[shadow_locs[0], shadow_locs[1]] = foreground_pixelated[shadow_locs[0], shadow_locs[1]]
-
-                    background = cv2.cvtColor(background, cv2.COLOR_RGB2BGRA)
-                    foreground_body = cv2.cvtColor(foreground_body, cv2.COLOR_GRAY2BGRA)
-                    foreground_shadow = cv2.cvtColor(foreground_shadow, cv2.COLOR_GRAY2BGRA)
-
-                    if do_alpha_blending:
-                        background = superimpose(background, foreground_body, visible_part_alpha=0.3)
-                        background = superimpose(background, foreground_shadow, visible_part_alpha=0.5)
-                    else:
-                        background = superimpose(background, foreground_body, visible_part_alpha=1)
-                        background = superimpose(background, foreground_shadow, visible_part_alpha=1)
-
-                    background_salt_and_pepper = cv2.cvtColor(background, cv2.COLOR_BGR2GRAY)
-                    if do_salt_and_pepper_noise:
-                        background_salt_and_pepper = noisy(background_salt_and_pepper, mask=foreground_only_shadow_mask, type="shadow")
-                        background_salt_and_pepper = noisy(background_salt_and_pepper, mask=foreground_only_body_mask, type="body")
+        B, G, R, A = cv2.split(foreground_bbox)   # makes transparency white, for easier bbox detection
+        alpha = A / 255
+        R = (255 * (1 - alpha) + R * alpha).astype(np.uint8)
+        G = (255 * (1 - alpha) + G * alpha).astype(np.uint8)
+        B = (255 * (1 - alpha) + B * alpha).astype(np.uint8)
+        foreground_whitealpha = cv2.merge((B, G, R))
+        foreground_whitealpha = cv2.cvtColor(foreground_whitealpha, cv2.COLOR_BGR2GRAY)
+        #print("Unique gray values in this image: {}".format(np.unique(foreground_whitealpha))) # useful for finding background - body - shadow tresholding limits
 
 
-                    # background = cv2.rectangle(background, (xmin,ymin), (xmax,ymax), (0, 0, 255), thickness=1) # TODO remove bbox visualization
-                    fg_prefix = fg_file.replace(".png","")
-                    bg_prefix = bg_file.split("_")[0]
+        grey_tresh_min = 50  # below this pixel value is shadow
+        grey_tresh_max = 200  # above this pixel value is background
+        ret_bm, foreground_only_shadow_mask = cv2.threshold(foreground_whitealpha, grey_tresh_min, 255, cv2.THRESH_BINARY_INV)  # only shadow is white
+        ret_bm, foreground_mask = cv2.threshold(foreground_whitealpha, grey_tresh_max, 255, cv2.THRESH_BINARY_INV)  # entire body is white
+        foreground_only_body_mask = cv2.bitwise_xor(foreground_only_shadow_mask,foreground_whitealpha) # extract out of the above only body by doing a xor
+        ret_bm, foreground_only_body_mask = cv2.threshold(foreground_only_body_mask, grey_tresh_max, 255, cv2.THRESH_BINARY_INV)
+        h = foreground_mask.shape[0]
+        w = foreground_mask.shape[1]
+        # loop over the image, pixel by pixel
+        ymin, ymax, xmin, xmax = -1, -1, -1, -1
+        for y in range(0, h): # bounding box calculation
+            row = foreground_mask[y,:]
+            mask = row > 200
+            if np.any(mask):
+                if ymin == -1: ymin = y
+                ymax = y
+        for x in range(0, w):
+            column = foreground_mask[:,x]
+            mask = column > 200
+            if np.any(mask):
+                if xmin == -1: xmin = x
+                xmax = x
 
-                    if poses_in_seperate_folders: img_loc = "{}/{}/{}_bg_{}.png".format(output_root,fg_prefix,fg_prefix,bg_prefix)
-                    img_loc_all = "{}/all/{}_bg_{}.png".format(output_root,fg_prefix,bg_prefix)
-                    img_name = "{}_bg_{}.png".format(fg_prefix,bg_prefix)
-                    if poses_in_seperate_folders and not os.path.exists("{}/{}/".format(output_root,fg_prefix)):
-                       os.makedirs("{}/{}/".format(output_root,fg_prefix))
-                    if not os.path.exists("{}/all/".format(output_root)):
-                        os.makedirs("{}/all/".format(output_root))
-                    if save_img and poses_in_seperate_folders: cv2.imwrite(img_loc, background,[cv2.IMWRITE_PNG_COMPRESSION, 0])
-                    if save_img: cv2.imwrite(img_loc_all, background,[cv2.IMWRITE_PNG_COMPRESSION, 0])
+        foreground_pixelated = foreground_whitealpha
+        if do_pixelation:
+            foreground_pixelated = apply_pixelation(foreground_whitealpha, (700, 700)) # apply pixelation, for a more rough looking body
 
-                    bbox_dict = {
-                        "image": img_name,
-                        "xmin": xmin,
-                        "ymin": ymin,
-                        "xmax": xmax,
-                        "ymax": ymax,
-                        "label": "confirmed_body"
-                    }
-                    list_of_anchors.append(bbox_dict)
-                    if show_image_mode or (debug_mode and (xmin == -1 or ymin == -1 or xmax == -1 or ymax == -1)):
-                        # display the image
-                        if show_image_mode:
-                            cv2.imshow("Transparent to white image", foreground_whitealpha)
-                            cv2.waitKey(0)
-                            cv2.destroyAllWindows()
-                            cv2.imshow("Background with pixelation({}) and body and shadow alpha({})".format(do_pixelation,do_alpha_blending), background)
-                            cv2.waitKey(0)
-                            cv2.destroyAllWindows()
-                            cv2.imshow("Previous background with salt and pepper noise({})".format(do_salt_and_pepper_noise), background_salt_and_pepper)
-                            cv2.waitKey(0)
-                            cv2.destroyAllWindows()
-                            break
-            print("Synthetic data for background file {} finished".format(bg_file))
+        body_locs = np.where(foreground_only_body_mask != 0)
+        shadow_locs = np.where(foreground_only_shadow_mask != 0)
+        white_image = np.ones((1000,1000), np.uint8)
+        white_image = white_image * 255
+        foreground_body = white_image.copy()
+        foreground_shadow = white_image.copy()
+        foreground_body[body_locs[0], body_locs[1]] = foreground_pixelated[body_locs[0], body_locs[1]]
+        foreground_shadow[shadow_locs[0], shadow_locs[1]] = foreground_pixelated[shadow_locs[0], shadow_locs[1]]
+
+        background = cv2.cvtColor(background, cv2.COLOR_RGB2BGRA)
+        foreground_body = cv2.cvtColor(foreground_body, cv2.COLOR_GRAY2BGRA)
+        foreground_shadow = cv2.cvtColor(foreground_shadow, cv2.COLOR_GRAY2BGRA)
+
+        if do_alpha_blending:
+            background = superimpose(background, foreground_body, visible_part_alpha=0.3)
+            background = superimpose(background, foreground_shadow, visible_part_alpha=0.5)
+        else:
+            background = superimpose(background, foreground_body, visible_part_alpha=1)
+            background = superimpose(background, foreground_shadow, visible_part_alpha=1)
+
+        background_salt_and_pepper = cv2.cvtColor(background, cv2.COLOR_BGR2GRAY)
+        if do_salt_and_pepper_noise:
+            background_salt_and_pepper = noisy(background_salt_and_pepper, mask=foreground_only_shadow_mask, type="shadow")
+            background_salt_and_pepper = noisy(background_salt_and_pepper, mask=foreground_only_body_mask, type="body")
+
+
+        # background = cv2.rectangle(background, (xmin,ymin), (xmax,ymax), (0, 0, 255), thickness=1) # bbox visualization
+        fg_prefix = fg_file.replace(".png","")
+        bg_prefix = bg_file.split("_")[0]
+
+        if poses_in_seperate_folders: img_loc = "{}/{}/{}_bg_{}.png".format(output_root,fg_prefix,fg_prefix,bg_prefix)
+        img_loc_all = "{}/all/{}_bg_{}.png".format(output_root,fg_prefix,bg_prefix)
+        img_name = "{}_bg_{}.png".format(fg_prefix,bg_prefix)
+        if poses_in_seperate_folders and not os.path.exists("{}/{}/".format(output_root,fg_prefix)):
+           os.makedirs("{}/{}/".format(output_root,fg_prefix))
+        if not os.path.exists("{}/all/".format(output_root)):
+            os.makedirs("{}/all/".format(output_root))
+        if save_img and poses_in_seperate_folders: cv2.imwrite(img_loc, background,[cv2.IMWRITE_PNG_COMPRESSION, 0])
+        if save_img: cv2.imwrite(img_loc_all, background,[cv2.IMWRITE_PNG_COMPRESSION, 0])
+
+        bbox_dict = {
+            "image": img_name,
+            "xmin": xmin,
+            "ymin": ymin,
+            "xmax": xmax,
+            "ymax": ymax,
+            "label": "confirmed_body"
+        }
+        list_of_anchors.append(bbox_dict)
+        samples_counter += 1
+        if show_image_mode or (debug_mode and (xmin == -1 or ymin == -1 or xmax == -1 or ymax == -1)):
+            # display the image
+            if show_image_mode:
+                cv2.imshow("Transparent to white image", foreground_whitealpha)
+                cv2.waitKey(0)
+                cv2.destroyAllWindows()
+                cv2.imshow("Background with pixelation({}) and body and shadow alpha({})".format(do_pixelation,do_alpha_blending), background)
+                cv2.waitKey(0)
+                cv2.destroyAllWindows()
+                cv2.imshow("Previous background with salt and pepper noise({})".format(do_salt_and_pepper_noise), background_salt_and_pepper)
+                cv2.waitKey(0)
+                cv2.destroyAllWindows()
+                break
+
+    print("Synthetic data generation finished {} samples generated".format(samples_counter))
 
     bbox_file = "{}/bounding_boxes.csv".format(output_root)
     if not os.path.isfile(bbox_file):
@@ -264,7 +288,10 @@ def render_to_background(renders_folder,backgrounds_folder):
             label = bbox["label"]
             if xmin == -1 or ymin == -1 or xmax == -1 or ymax == -1: continue
             csv_writer.writerow([filename,xmin,ymin,xmax,ymax,label])
+    print("Bounding box csv file generation finished")
 
 
 #anchor_box_analyze()
-#render_to_background("../../predictions/renders/generated/transparent_bg/renders/","../../predictions/renders/generated/transparent_bg/bg") # comment when running for real
+#remove_images_from_folder("C:/Users/zanza/Desktop/MSC_work/Msc_Obj_Det/data/vott/run3_big/output/vott-csv-export/train_synthetic_bgs/","C:/Users/zanza/Desktop/MSC_work/Msc_Obj_Det/data/vott/run3_big/output/vott-csv-export/imgs_containing_bodies_list.txt")
+
+render_to_background("C:/Users/zanza/Desktop/predictions/renders/generated/transparent_bg/renders/","C:/Users/zanza/Desktop/predictions/renders/generated/transparent_bg/bg") # comment when running for real
