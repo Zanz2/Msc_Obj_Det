@@ -147,10 +147,10 @@ def render_to_background(renders_folder,backgrounds_folder):
 
     debug_mode = False
     poses_in_seperate_folders = False
-    save_img = False
-    show_image_mode = True
+    save_img = True
+    show_image_mode = False
 
-    do_pixelation = True
+    do_pixelation = False # first base is alpha -> s&p, second is pixel -> alpha -> s&p, third is just alpha
     do_alpha_blending = True
     do_salt_and_pepper_noise = True
 
@@ -305,4 +305,4 @@ def render_to_background(renders_folder,backgrounds_folder):
 #anchor_box_analyze()
 #remove_images_from_folder("C:/Users/zanza/Desktop/predictions/renders/generated/transparent_bg/bg_test_synthetic","C:/Users/zanza/Desktop/MSC_work/Msc_Obj_Det/data/vott/run3_big/output/vott-csv-export/imgs_containing_bodies_list.txt")
 
-render_to_background("C:/Users/zanza/Desktop/predictions/renders/generated/transparent_bg/renders/","C:/Users/zanza/Desktop/predictions/renders/generated/transparent_bg/bg") # comment when running for real
+#render_to_background("C:/Users/zanza/Desktop/predictions/renders/generated/transparent_bg/renders/","C:/Users/zanza/Desktop/predictions/renders/generated/transparent_bg/bg") # comment when running for real

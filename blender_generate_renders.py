@@ -182,8 +182,8 @@ def set_pose(pose_index):
         rotate_obj(neck,(33.2038,1.26253,-1.15656))
         
     if main_pose == 4 or main_pose == 3:
-        move_obj(spine,(0.095211,-0.027949,0.137238))
-        rotate_obj(spine,(6.41438,-0.000002,0.000001))
+        move_obj(spine,(0.095211,-0.029933,0.130611))
+        rotate_obj(spine,(-29.1303,0.000022,-0.000019))
         move_obj(ik_l_hand_anch,(-0.085021,0.0321,0.511855))
         move_obj(ik_r_hand_anch,(-0.222251,0.048074,0.414634))
         
@@ -195,32 +195,40 @@ def set_pose(pose_index):
     
     case = random.randint(1,4)
     if case == 1: pass # body is making normal contact with ground
-    if case == 2: move_obj(big_bone,(0,0.001331,-0.5),mode="increment") # body is deeper inside floor
-    if case == 3: move_obj(big_bone,(0,0.003889,-0.10),mode="increment") # body is very deep inside floor
+    if case == 2: move_obj(big_bone,(0,0.001331,-0.05),mode="increment") # body is deeper inside floor
+    if case == 3: move_obj(big_bone,(0,0.003889,-0.1),mode="increment") # body is very deep inside floor
     if case == 4: move_obj(big_bone,(0,0.005458,-0.2),mode="increment") # even deeper
     base_name = "{}submrgd{}_".format(base_name,case)
     
     # 6.suspended in water face up is rare in real life, because of limb weight, so it is not implemented
     
-    # arms have a range of 0.6
-    # legs have a range of 0.8
+    # arms have a max range of 0.6
+    # legs have a max range of 0.8 
     
-    if random.randint(0,1) == 1:
-        movements = random.randint(1,3)
-        ik_r_heel = hbp.bones['IK.heel.R']
-        ik_l_heel = hbp.bones['IK.heel.L']
-        ik_r_hand = hbp.bones['IK.hand.R']
-        ik_l_hand = hbp.bones['IK.hand.L']
-        limb_array = [(ik_r_heel,0.6),(ik_l_heel,0.6),(ik_r_hand,0.4),(ik_l_hand,0.4)]
-        random.shuffle(limb_array)
-        for x in range(movements):
-            obj = limb_array[x][0]
-            range_limb = random.uniform(-limb_array[x][1],limb_array[x][1])
-            move_obj(obj,(range_limb,0,range_limb),mode="increment")
-            print("Added limb variations")
-        base_name = "{}limbvar{}_".format(base_name,case)
+    ik_r_heel = hbp.bones['IK.heel.R']
+    ik_l_heel = hbp.bones['IK.heel.L']
+    ik_r_hand = hbp.bones['IK.hand.R']
+    ik_l_hand = hbp.bones['IK.hand.L']
+    limb_array = [(ik_r_heel,0.6,0.15,"rleg"),(ik_l_heel,0.6,0.15,"lleg"),(ik_r_hand,0.4,0.15,"rhand"),(ik_l_hand,0.4,0.15,"lhand")]
+    # each tuple = (limb object,max range of limb,decimal chance to occur,string name)
+    
+    base_name = "{}limbvar".format(base_name) # base_name = "{}limbvar0_".format(base_name)
+    made_limb_var = False
+    for limb_tuple in limb_array:
+        limb_chance = random.uniform(0, 1)
+        if limb_chance < limb_tuple[2]:
+            limb_obj = limb_tuple[0]
+            limb_str = limb_tuple[3]
+            min_range,max_range = -limb_tuple[1],limb_tuple[1]
+            x_loc = random.uniform(min_range,max_range)
+            z_loc = random.uniform(min_range,max_range) # y in global is z in this local coordinate system, because its relative to the pose, and its flipped
+            move_obj(limb_obj,(x_loc,0,z_loc),mode="increment")
+            made_limb_var = True
+            base_name = "{}x{}".format(base_name,limb_str)
+    if not made_limb_var:
+        base_name = "{}xnone_".format(base_name)
     else:
-        base_name = "{}nolimbvar{}_".format(base_name,case)
+        base_name = "{}_".format(base_name)
             
         
     return base_name
@@ -297,7 +305,7 @@ def randomize_sonar_angle(default=False): #effectively moves the light source up
         return angle
     if default: 
         spot.location = mathutils.Vector((34.3238,0,30)) # 30 z is default
-        return "default"
+        return "blunt"
     
 def randomize_body_rotation():
     deselect_all()
@@ -347,22 +355,32 @@ def render_scene(image_name,debug=False,frame=1):
 def generate_renders(output_folder,debug_folder):
     #widths of gt boxes min:23.80952380952381 max:603.3549783549784 avg:127.32661145509879
     #heights of gt boxes min:17.991004497751078 max:231.60173160173156 avg:50.13107902766274
-    print("start script")
+    print("Start script")
     existing_images_list = []
     randomize_sonar_angle(default=True)
     do_debug_render = False
     
-    do_render = False
-    dynamic_sonar_angle = True
+    do_render = True
+    dynamic_sonar_angle = True # TODO remove these
     dynamic_body_rotation = True
     dynamic_body_position = True
-    n_images_to_generate = 1
+    n_images_to_generate = 100
     
-    # pos 5_1 is most common with changes
+    # pos 5 is most common irl
     for x in range(n_images_to_generate): 
         print("Started {}/{}...".format(x,n_images_to_generate))
-        random_pose = max(random.randint(1,5), random.randint(1,5), random.randint(1,5))
-        # 5 is most likely, 4 is less, 3 is less, 1 and 2 are rare
+        pose_chance = random.uniform(0, 1)
+        if pose_chance < 0.40:
+            random_pose = 5
+        elif pose_chance < 0.60:
+            random_pose = 4
+        elif pose_chance < 0.80:
+            random_pose = 3
+        elif pose_chance < 0.90:
+            random_pose = 2 
+        elif pose_chance < 1:
+            random_pose = 1
+        # 5 is most likely, 4 and 3 is less, 1 and 2 are rare irl
         output_name = set_pose(random_pose)
         debug_name = output_name
         
