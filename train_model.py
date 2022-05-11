@@ -577,7 +577,7 @@ def evaluate(model, data_loader, device, eval_visualize=False, score_threshold=0
 if __name__ == "__main__":
     # laptop = "C:/Users/zanza/Desktop/MSC_work/Msc_Obj_Det/"
     # desktop = "C:/Users/Moji podatki/Desktop/github/Msc_Obj_Det/"
-    prefix1 = "C:/Users/zanza/Desktop/MSC_work/Msc_Obj_Det/"
+    prefix1 = "C:/Users/Moji podatki/Desktop/github/Msc_Obj_Det/"
     target = "conversions/vott_to_vgg_proj/empty_vgg_json.json"
     source = "conversions/vott_to_vgg_proj/source_vott_csv.csv"
     target_folder = prefix1+"data/vott/run3_big/input"
