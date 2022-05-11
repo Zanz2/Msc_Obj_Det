@@ -698,8 +698,8 @@ if __name__ == "__main__":
     output_folder = prefix1+"data/vott/run3_big/output/vott-csv-export/"
     csv_file = output_folder+"06_02_2022_BIG-export.csv"
     train = output_folder+"train"
-    test = output_folder+"dev" # switched because /test has more files for evaluation
-    dev = output_folder+"test"
+    test = output_folder+"test"
+    dev = output_folder+"dev"
 
     train_dataset = SonarDataset(train,csv_file,sonar_transform,type="oversampled")
     dev_dataset = SonarDataset(dev,csv_file,sonar_eval_transform)
