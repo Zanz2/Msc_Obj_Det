@@ -140,19 +140,24 @@ def superimpose(input_background,input_foreground,visible_part_alpha=0.5):
     input_background[:, :, 3] = (1 - (1 - alpha_foreground) * (1 - alpha_background)) * 255
     return input_background
 
-def render_to_background(renders_folder,backgrounds_folder):
+def render_to_background(renders_folder,backgrounds_folder,outputs_folder_suffix="",config_dict=None):
 
     list_of_anchors = []
-    output_root = "{}/../outputs".format(renders_folder)
+    output_root = "{}/../outputs{}".format(renders_folder,outputs_folder_suffix)
 
     debug_mode = False
     poses_in_seperate_folders = False
     save_img = True
     show_image_mode = False
 
-    do_pixelation = False # first base is alpha -> s&p, second is pixel -> alpha -> s&p, third is just alpha
-    do_alpha_blending = True
-    do_salt_and_pepper_noise = True
+    if config_dict is None:
+        do_pixelation = False
+        do_alpha_blending = True
+        do_salt_and_pepper_noise = True
+    else:
+        do_pixelation = config_dict["do_pixelation"]
+        do_alpha_blending = config_dict["do_alpha_blending"]
+        do_salt_and_pepper_noise = config_dict["do_salt_and_pepper_noise"]
 
     applicable_backgrounds = []
     for bg_file in os.listdir(backgrounds_folder):
@@ -162,8 +167,10 @@ def render_to_background(renders_folder,backgrounds_folder):
     random.shuffle(applicable_backgrounds)
 
     samples_counter = 0
+    samples_len = len(os.listdir(renders_folder))
     for fg_file in os.listdir(renders_folder):
         if not fg_file.endswith(".png"): continue
+        print("Processing {}/{}".format(samples_counter,samples_len))
         render_file = os.path.join(renders_folder, fg_file)
         current_render = render_file
 
@@ -240,8 +247,8 @@ def render_to_background(renders_folder,backgrounds_folder):
         fg_prefix = "{}_pix{}_alpha{}_spnoise{}".format(fg_prefix,bool_to_str(do_pixelation),bool_to_str(do_alpha_blending),bool_to_str(do_salt_and_pepper_noise))
         fg_prefix = "{:04d}_{}".format(samples_counter,fg_prefix)
         bg_suffix = ""
-        if "_" in bg_file:
-            bg_suffix = bg_file.split("_")[-1] # gets something like 231.png or 034.png from our original naming convention
+        if "_" in current_bg:
+            bg_suffix = current_bg.split("_")[-1] # gets something like 231.png or 034.png from our original naming convention
             bg_suffix = bg_suffix.replace(".png", "")
 
         img_name = "{}_bg{}.png".format(fg_prefix, bg_suffix)
@@ -305,4 +312,4 @@ def render_to_background(renders_folder,backgrounds_folder):
 #anchor_box_analyze()
 #remove_images_from_folder("C:/Users/zanza/Desktop/predictions/renders/generated/transparent_bg/bg_test_synthetic","C:/Users/zanza/Desktop/MSC_work/Msc_Obj_Det/data/vott/run3_big/output/vott-csv-export/imgs_containing_bodies_list.txt")
 
-#render_to_background("C:/Users/zanza/Desktop/predictions/renders/generated/transparent_bg/renders/","C:/Users/zanza/Desktop/predictions/renders/generated/transparent_bg/bg") # comment when running for real
+#render_to_background("C:/Users/zanza/Desktop/predictions/renders/generated/transparent_bg/renders/","C:/Users/zanza/Desktop/predictions/renders/generated/transparent_bg/bg_train_synthetic") # comment when running for real

@@ -10,7 +10,7 @@ import random
 
 
 sys.path.append( 'C:/Users/zanza/Desktop/MSC_work/Msc_Obj_Det/' )
-import renders_synthetic_data_processing
+import renders_synthetic_data_processing as rsdp
 
 def set_pose(pose_index):
     deselect_all()
@@ -361,10 +361,10 @@ def generate_renders(output_folder,debug_folder):
     do_debug_render = False
     
     do_render = True
-    dynamic_sonar_angle = True # TODO remove these
+    dynamic_sonar_angle = True 
     dynamic_body_rotation = True
     dynamic_body_position = True
-    n_images_to_generate = 100
+    n_images_to_generate = 10000
     
     # pos 5 is most common irl
     for x in range(n_images_to_generate): 
@@ -407,7 +407,31 @@ def generate_renders(output_folder,debug_folder):
 
 save_folder = 'C:/Users/zanza/Desktop/predictions/renders/generated/transparent_bg/renders/'
 save_debug_folder = 'C:/Users/zanza/Desktop/predictions/renders/generated/transparent_bg/debug/'
-bg_folder = 'C:/Users/zanza/Desktop/predictions/renders/generated/transparent_bg/bg'
+bg_folder = 'C:/Users/zanza/Desktop/predictions/renders/generated/transparent_bg/bg_train_synthetic/'
 
 generate_renders(save_folder,save_debug_folder)
-#renders_synthetic_data_processing.render_to_background(save_folder,bg_folder) # comment when testing
+
+
+if False: # to debug set this to false
+
+    config_dict_1 = {
+        "do_pixelation": False,
+        "do_alpha_blending": True,
+        "do_salt_and_pepper_noise": True,
+    }
+    config_dict_2 = {
+        "do_pixelation": True,
+        "do_alpha_blending": True,
+        "do_salt_and_pepper_noise": True,
+    }
+    config_dict_3 = {
+        "do_pixelation": False,
+        "do_alpha_blending": True,
+        "do_salt_and_pepper_noise": False,
+    }
+    # first base is alpha -> s&p, second is pixel -> alpha -> s&p, third is just alpha
+    rsdp.render_to_background(save_folder,bg_folder,outputs_folder_suffix="_first",config_dict_1)
+
+    rsdp.render_to_background(save_folder,bg_folder,outputs_folder_suffix="_second",config_dict_2)
+
+    rsdp.render_to_background(save_folder,bg_folder,outputs_folder_suffix="_third",config_dict_3)
