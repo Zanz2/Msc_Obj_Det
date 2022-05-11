@@ -10,7 +10,7 @@ import random
 
 
 sys.path.append( 'C:/Users/zanza/Desktop/MSC_work/Msc_Obj_Det/' )
-import synthetic_magic
+import renders_synthetic_data_processing
 
 def set_pose(pose_index):
     deselect_all()
@@ -388,4 +388,4 @@ save_debug_folder = 'C:/Users/zanza/Desktop/predictions/renders/generated/transp
 bg_folder = 'C:/Users/zanza/Desktop/predictions/renders/generated/transparent_bg/bg'
 
 generate_renders(save_folder,save_debug_folder)
-#synthetic_magic.render_to_background(save_folder,bg_folder) # comment when testing
+#renders_synthetic_data_processing.render_to_background(save_folder,bg_folder) # comment when testing
