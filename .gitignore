@@ -1,3 +1,5 @@
 data/
 all_training_data/
 data_outputs/
+DatasetDistributions.png
+LossPlot.png
