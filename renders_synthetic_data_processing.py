@@ -80,15 +80,15 @@ def bool_to_str(boolean_val):
     else:
         return "0"
 
-def noisy(image,mask,type):
+def noisy(image,mask,type): # TODO WIP seperate random noise profiles depending on certain body factors (hire me, im unemployed!)
     output = image.copy()
     dist_size = 300
     if type == "shadow":
-        low, mid, high = 2, 35, 50
-        ret = np.round(np.random.normal(mid, 12, dist_size))
+        low, mid, high = 2, 45, 70
+        ret = np.round(np.random.normal(mid, 5, dist_size))
     if type == "body":
-        low, mid, high = 90, 110, 180
-        ret = np.round(np.random.normal(mid, 15, dist_size))
+        low, mid, high = 60, 100, 160
+        ret = np.round(np.random.normal(mid, 50, dist_size))
     for i in range(mask.shape[0]):
         if np.any(mask[i, ] > 0):
             for j in range(mask.shape[1]):
@@ -96,9 +96,15 @@ def noisy(image,mask,type):
                     index = np.random.randint(0,dist_size)
                     while ret[index] < low or ret[index] > high:
                         index = np.random.randint(0, dist_size)
-                    if index % 2 == 0: output[i][j] = ret[index] # add some noise
+                    if index % 2 == 0:
+                        output[i][j][0] = ret[index] # add some noise to B G and R
+                        output[i][j][1] = ret[index]
+                        output[i][j][2] = ret[index]
 
     return output
+
+def apply_blur(image_name): # TODO WIP apply blur, if you're reading this it means that i wasnt hired fulltime, and the project fell on your hands
+    pass
 
 def apply_pixelation(image_name, downsample_size): # downsample size = (w,h), it takes in grayscale images
     new_img = image_name
@@ -140,8 +146,7 @@ def superimpose(input_background,input_foreground,visible_part_alpha=0.5):
     input_background[:, :, 3] = (1 - (1 - alpha_foreground) * (1 - alpha_background)) * 255
     return input_background
 
-def render_to_background(renders_folder,backgrounds_folder,outputs_folder_suffix="",config_dict=None):
-
+def render_to_background(renders_folder,backgrounds_folder,outputs_folder_suffix="",config_dict=None, samples_counter=0):
     list_of_anchors = []
     output_root = "{}/../outputs{}".format(renders_folder,outputs_folder_suffix)
 
@@ -151,13 +156,13 @@ def render_to_background(renders_folder,backgrounds_folder,outputs_folder_suffix
     show_image_mode = False
 
     if config_dict is None:
-        do_pixelation = False
-        do_alpha_blending = True
+        do_pixelation = True
         do_salt_and_pepper_noise = True
+        do_alpha_blending = True
     else:
         do_pixelation = config_dict["do_pixelation"]
-        do_alpha_blending = config_dict["do_alpha_blending"]
         do_salt_and_pepper_noise = config_dict["do_salt_and_pepper_noise"]
+        do_alpha_blending = config_dict["do_alpha_blending"]
 
     applicable_backgrounds = []
     for bg_file in os.listdir(backgrounds_folder):
@@ -166,10 +171,10 @@ def render_to_background(renders_folder,backgrounds_folder,outputs_folder_suffix
             applicable_backgrounds.append(background_file)
     random.shuffle(applicable_backgrounds)
 
-    samples_counter = 0
     samples_len = len(os.listdir(renders_folder))
     for fg_file in os.listdir(renders_folder):
         if not fg_file.endswith(".png"): continue
+
         print("Processing {}/{}".format(samples_counter,samples_len))
         render_file = os.path.join(renders_folder, fg_file)
         current_render = render_file
@@ -229,29 +234,25 @@ def render_to_background(renders_folder,backgrounds_folder,outputs_folder_suffix
         foreground_body = cv2.cvtColor(foreground_body, cv2.COLOR_GRAY2BGRA)
         foreground_shadow = cv2.cvtColor(foreground_shadow, cv2.COLOR_GRAY2BGRA)
 
-        if do_alpha_blending:
+        if do_salt_and_pepper_noise: # input has to be BGRA
+            background = noisy(background, mask=foreground_only_shadow_mask, type="shadow")
+            background = noisy(background, mask=foreground_only_body_mask, type="body")
+
+        if do_alpha_blending: # input has to be BGRA
             background = superimpose(background, foreground_body, visible_part_alpha=0.3)
             background = superimpose(background, foreground_shadow, visible_part_alpha=0.5)
         else:
             background = superimpose(background, foreground_body, visible_part_alpha=1)
             background = superimpose(background, foreground_shadow, visible_part_alpha=1)
 
-        background_salt_and_pepper = cv2.cvtColor(background, cv2.COLOR_BGR2GRAY)
-        if do_salt_and_pepper_noise:
-            background_salt_and_pepper = noisy(background_salt_and_pepper, mask=foreground_only_shadow_mask, type="shadow")
-            background_salt_and_pepper = noisy(background_salt_and_pepper, mask=foreground_only_body_mask, type="body")
-
-
         # background = cv2.rectangle(background, (xmin,ymin), (xmax,ymax), (0, 0, 255), thickness=1) # bbox visualization
+        background = cv2.cvtColor(background, cv2.COLOR_BGRA2GRAY)
+
         fg_prefix = fg_file.replace(".png", "")
         fg_prefix = "{}_pix{}_alpha{}_spnoise{}".format(fg_prefix,bool_to_str(do_pixelation),bool_to_str(do_alpha_blending),bool_to_str(do_salt_and_pepper_noise))
         fg_prefix = "{:04d}_{}".format(samples_counter,fg_prefix)
-        bg_suffix = ""
-        if "_" in current_bg:
-            bg_suffix = current_bg.split("_")[-1] # gets something like 231.png or 034.png from our original naming convention
-            bg_suffix = bg_suffix.replace(".png", "")
 
-        img_name = "{}_bg{}.png".format(fg_prefix, bg_suffix)
+        img_name = "{}_bg.png".format(fg_prefix)
         if poses_in_seperate_folders: img_loc = "{}/{}/{}".format(output_root,fg_prefix,img_name)
         img_loc_all = "{}/all/{}".format(output_root,img_name)
 
@@ -262,7 +263,7 @@ def render_to_background(renders_folder,backgrounds_folder,outputs_folder_suffix
 
         if save_img and poses_in_seperate_folders: cv2.imwrite(img_loc, background,[cv2.IMWRITE_PNG_COMPRESSION, 0])
         if save_img: cv2.imwrite(img_loc_all, background,[cv2.IMWRITE_PNG_COMPRESSION, 0])
-        print("{} Done".format(img_name))
+        print("{} Done".format(img_loc_all))
         bbox_dict = {
             "image": img_name,
             "xmin": xmin,
@@ -279,13 +280,9 @@ def render_to_background(renders_folder,backgrounds_folder,outputs_folder_suffix
                 cv2.imshow("Transparent to white image", foreground_whitealpha)
                 cv2.waitKey(0)
                 cv2.destroyAllWindows()
-                cv2.imshow("Background with pixelation({}) and body and shadow alpha({})".format(do_pixelation,do_alpha_blending), background)
+                cv2.imshow("Background with pixelation({}) and body and shadow alpha({}) and salt and pepper noise({})".format(do_pixelation,do_alpha_blending,do_salt_and_pepper_noise), background)
                 cv2.waitKey(0)
                 cv2.destroyAllWindows()
-                cv2.imshow("Previous background with salt and pepper noise({})".format(do_salt_and_pepper_noise), background_salt_and_pepper)
-                cv2.waitKey(0)
-                cv2.destroyAllWindows()
-                break
 
     print("Synthetic data generation finished {} samples generated".format(samples_counter))
 
@@ -312,4 +309,6 @@ def render_to_background(renders_folder,backgrounds_folder,outputs_folder_suffix
 #anchor_box_analyze()
 #remove_images_from_folder("C:/Users/zanza/Desktop/predictions/renders/generated/transparent_bg/bg_test_synthetic","C:/Users/zanza/Desktop/MSC_work/Msc_Obj_Det/data/vott/run3_big/output/vott-csv-export/imgs_containing_bodies_list.txt")
 
-#render_to_background("C:/Users/zanza/Desktop/predictions/renders/generated/transparent_bg/renders/","C:/Users/zanza/Desktop/predictions/renders/generated/transparent_bg/bg_train_synthetic") # comment when running for real
+#render_to_background("C:/Users/zanza/Desktop/predictions/renders/generated/transparent_bg/renders/",
+#                     "C:/Users/zanza/Desktop/predictions/renders/generated/transparent_bg/bg_train_synthetic/")
+# comment when running for real

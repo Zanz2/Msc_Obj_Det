@@ -271,6 +271,7 @@ def reset_body_pos(): # only in object mode, bones can not be reset in this way
     bpy.ops.object.mode_set(mode="POSE")
     for obj in bones:
         obj.bone.select = True
+    
     bpy.ops.pose.transforms_clear()
 
 def deselect_all():
@@ -296,7 +297,7 @@ def randomize_sonar_angle(default=False): #effectively moves the light source up
         z_pos = random.uniform(10,20)
         angle = "sharp"
     else:
-        z_pos = random.uniform(5,10)
+        z_pos = random.uniform(8,10)
         angle = "vsharp"
     #body_y = bpy.data.objects['LightTrackObj'].location[1] # so that sonar rays are always perpendicular to body, like in real images
     #print(body_y) # i added a constraint trough the GUI, so the 0 y here gets ignored anyway, and the Y of the body is copied
@@ -315,7 +316,7 @@ def randomize_body_rotation():
     big_bone = hbp.bones['Bone']
     rand_degrees = random.randint(0,360)
     rotate_obj(big_bone,(False,False,rand_degrees))
-    return "{}zdeg_".format(rand_degrees)
+    return "zdeg{}_".format(rand_degrees)
 
 def randomize_body_position():
     deselect_all()
@@ -333,9 +334,22 @@ def randomize_body_position():
     current_z = big_bone.location[2] + newZ
     print("Move: y:{}, calc z:{}".format(rand_y,newZ))
     move_obj(big_bone,(rand_x,rand_y,current_z))
-    ret_string = "{}x_{}y_".format(round(rand_x, 2),round(rand_y, 2))
+    ret_string = "x{}_y{}_".format(round(rand_x, 2),round(rand_y, 2))
     ret_string = ret_string.replace("-","neg").replace(".","dot")
     return ret_string
+
+def randomize_body_scaling():
+    if random.randint(0,1) == 0:
+        return "scale1_"
+    scale = random.uniform(0.5, 1.1)
+    # 0.5 to 1.1 range in regard to original
+    deselect_all()
+    bpy.data.objects['metarig'].select_set(True)
+    bpy.ops.object.mode_set(mode="POSE")
+    bpy.ops.transform.resize(value=(scale, scale, scale))
+    deselect_all()
+    ret_str = "scale{}_".format(round(scale,2)).replace(".","dot")
+    return ret_str
 
 def render_scene(image_name,debug=False,frame=1):
     output_file = image_name
@@ -364,7 +378,8 @@ def generate_renders(output_folder,debug_folder):
     dynamic_sonar_angle = True 
     dynamic_body_rotation = True
     dynamic_body_position = True
-    n_images_to_generate = 10000
+    dynamic_body_scaling = True
+    n_images_to_generate = 1 #10000 for final
     
     # pos 5 is most common irl
     for x in range(n_images_to_generate): 
@@ -391,6 +406,9 @@ def generate_renders(output_folder,debug_folder):
         if dynamic_body_position:
             x_y = randomize_body_position()
             output_name = "{}{}".format(output_name,x_y)
+        if dynamic_body_scaling:
+            scale_str = randomize_body_scaling()
+            output_name = "{}{}".format(output_name,scale_str)
         if dynamic_sonar_angle: 
             angle = randomize_sonar_angle()
             output_name = "{}{}".format(output_name,angle)
@@ -408,6 +426,7 @@ def generate_renders(output_folder,debug_folder):
 save_folder = 'C:/Users/zanza/Desktop/predictions/renders/generated/transparent_bg/renders/'
 save_debug_folder = 'C:/Users/zanza/Desktop/predictions/renders/generated/transparent_bg/debug/'
 bg_folder = 'C:/Users/zanza/Desktop/predictions/renders/generated/transparent_bg/bg_train_synthetic/'
+#bg_folder = 'C:/Users/zanza/Desktop/predictions/renders/generated/transparent_bg/bg/' # for debugging
 
 generate_renders(save_folder,save_debug_folder)
 
@@ -416,22 +435,23 @@ if False: # to debug set this to false
 
     config_dict_1 = {
         "do_pixelation": False,
-        "do_alpha_blending": True,
         "do_salt_and_pepper_noise": True,
+        "do_alpha_blending": True,
+
     }
     config_dict_2 = {
         "do_pixelation": True,
-        "do_alpha_blending": True,
         "do_salt_and_pepper_noise": True,
+        "do_alpha_blending": True,
     }
     config_dict_3 = {
         "do_pixelation": False,
-        "do_alpha_blending": True,
         "do_salt_and_pepper_noise": False,
+        "do_alpha_blending": True,
     }
     # first base is alpha -> s&p, second is pixel -> alpha -> s&p, third is just alpha
-    rsdp.render_to_background(save_folder,bg_folder,outputs_folder_suffix="_first",config_dict_1)
+    rsdp.render_to_background(save_folder,bg_folder,outputs_folder_suffix="_first",config_dict=config_dict_1)
 
-    rsdp.render_to_background(save_folder,bg_folder,outputs_folder_suffix="_second",config_dict_2)
+    rsdp.render_to_background(save_folder,bg_folder,outputs_folder_suffix="_second",config_dict=config_dict_2)
 
-    rsdp.render_to_background(save_folder,bg_folder,outputs_folder_suffix="_third",config_dict_3)
+    rsdp.render_to_background(save_folder,bg_folder,outputs_folder_suffix="_third",config_dict=config_dict_3)
