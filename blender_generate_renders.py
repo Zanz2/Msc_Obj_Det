@@ -288,16 +288,16 @@ def randomize_sonar_angle(default=False): #effectively moves the light source up
     angle = ""
     distance = random.randint(1,4)
     if distance == 4:
-        z_pos = random.uniform(40, 80)
+        z_pos = random.uniform(50, 80)
         angle = "vblunt"
     elif distance == 3:
-        z_pos = random.uniform(20,40)
+        z_pos = random.uniform(30,50)
         angle = "blunt"
     elif distance == 2:
-        z_pos = random.uniform(10,20)
+        z_pos = random.uniform(20,30)
         angle = "sharp"
     else:
-        z_pos = random.uniform(8,10)
+        z_pos = random.uniform(15,20)
         angle = "vsharp"
     #body_y = bpy.data.objects['LightTrackObj'].location[1] # so that sonar rays are always perpendicular to body, like in real images
     #print(body_y) # i added a constraint trough the GUI, so the 0 y here gets ignored anyway, and the Y of the body is copied
@@ -375,11 +375,11 @@ def generate_renders(output_folder,debug_folder):
     do_debug_render = False
     
     do_render = True
-    dynamic_sonar_angle = True 
+    dynamic_sonar_angle = True
     dynamic_body_rotation = True
     dynamic_body_position = True
     dynamic_body_scaling = True
-    n_images_to_generate = 1 #10000 for final
+    n_images_to_generate = 10000 #10000 for final
     
     # pos 5 is most common irl
     for x in range(n_images_to_generate): 
@@ -418,7 +418,7 @@ def generate_renders(output_folder,debug_folder):
             if do_debug_render and debug_name not in '\t'.join(existing_images_list):
                 output_file_debug = "{}{}".format(debug_folder,debug_name)
                 render_scene(output_file_debug,debug=True,frame=50)
-            render_scene(output_file,frame=100)
+            render_scene(output_file,frame=50)
             existing_images_list.append(output_name)
         print("DONE: {}".format(output_name))
 
@@ -426,28 +426,27 @@ def generate_renders(output_folder,debug_folder):
 save_folder = 'C:/Users/zanza/Desktop/predictions/renders/generated/transparent_bg/renders/'
 save_debug_folder = 'C:/Users/zanza/Desktop/predictions/renders/generated/transparent_bg/debug/'
 bg_folder = 'C:/Users/zanza/Desktop/predictions/renders/generated/transparent_bg/bg_train_synthetic/'
-#bg_folder = 'C:/Users/zanza/Desktop/predictions/renders/generated/transparent_bg/bg/' # for debugging
+#bg_folder = 'C:/Users/zanza/Desktop/predictions/renders/generated/transparent_bg/bg/' # for testing
 
 generate_renders(save_folder,save_debug_folder)
 
 
-if False: # to debug set this to false
+if True: # to debug set this to false
 
     config_dict_1 = {
         "do_pixelation": False,
-        "do_salt_and_pepper_noise": True,
         "do_alpha_blending": True,
-
+        "do_salt_and_pepper_noise": True,
     }
     config_dict_2 = {
         "do_pixelation": True,
-        "do_salt_and_pepper_noise": True,
         "do_alpha_blending": True,
+        "do_salt_and_pepper_noise": True,
     }
     config_dict_3 = {
         "do_pixelation": False,
-        "do_salt_and_pepper_noise": False,
         "do_alpha_blending": True,
+        "do_salt_and_pepper_noise": False,
     }
     # first base is alpha -> s&p, second is pixel -> alpha -> s&p, third is just alpha
     rsdp.render_to_background(save_folder,bg_folder,outputs_folder_suffix="_first",config_dict=config_dict_1)
