@@ -305,7 +305,7 @@ def randomize_sonar_angle(default=False): #effectively moves the light source up
         spot.location = mathutils.Vector((34.3238,0,z_pos))
         return angle
     if default: 
-        spot.location = mathutils.Vector((34.3238,0,30)) # 30 z is default
+        spot.location = mathutils.Vector((34.3238,0,35)) # 35 z is default
         return "blunt"
     
 def randomize_body_rotation():
@@ -379,7 +379,7 @@ def generate_renders(output_folder,debug_folder):
     dynamic_body_rotation = True
     dynamic_body_position = True
     dynamic_body_scaling = True
-    n_images_to_generate = 10000 #10000 for final
+    n_images_to_generate = 869 #10000 for final
     
     # pos 5 is most common irl
     for x in range(n_images_to_generate): 
@@ -428,29 +428,34 @@ save_debug_folder = 'C:/Users/zanza/Desktop/predictions/renders/generated/transp
 bg_folder = 'C:/Users/zanza/Desktop/predictions/renders/generated/transparent_bg/bg_train_synthetic/'
 #bg_folder = 'C:/Users/zanza/Desktop/predictions/renders/generated/transparent_bg/bg/' # for testing
 
-generate_renders(save_folder,save_debug_folder)
+print("---------Running new version with bg object-----------")
+#generate_renders(save_folder,save_debug_folder)
 
 
 if True: # to debug set this to false
 
     config_dict_1 = {
         "do_pixelation": False,
-        "do_alpha_blending": True,
         "do_salt_and_pepper_noise": True,
+        "do_alpha_blending": True,
     }
     config_dict_2 = {
         "do_pixelation": True,
-        "do_alpha_blending": True,
         "do_salt_and_pepper_noise": True,
+        "do_alpha_blending": True,
     }
     config_dict_3 = {
         "do_pixelation": False,
-        "do_alpha_blending": True,
         "do_salt_and_pepper_noise": False,
+        "do_alpha_blending": True,
     }
+
+    bg_object = rsdp.populate_backgrounds(bg_folder,5001)
+    # render_to_background("renders_folder",background_object)
+
     # first base is alpha -> s&p, second is pixel -> alpha -> s&p, third is just alpha
-    rsdp.render_to_background(save_folder,bg_folder,outputs_folder_suffix="_first",config_dict=config_dict_1)
+    rsdp.render_to_background(save_folder,bg_object,output_root="D:/generated_transparent_bg/outputs_first",config_dict=config_dict_1)
 
-    rsdp.render_to_background(save_folder,bg_folder,outputs_folder_suffix="_second",config_dict=config_dict_2)
+    #rsdp.render_to_background(save_folder,bg_object,output_root="D:/generated_transparent_bg/outputs_second",config_dict=config_dict_2)
 
-    rsdp.render_to_background(save_folder,bg_folder,outputs_folder_suffix="_third",config_dict=config_dict_3)
+    #rsdp.render_to_background(save_folder,bg_object,output_root="D:/generated_transparent_bg/outputs_third",config_dict=config_dict_3)

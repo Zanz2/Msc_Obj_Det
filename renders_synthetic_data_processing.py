@@ -5,6 +5,17 @@ import cv2
 import numpy as np
 import pandas as pd
 
+random.seed(42)
+np.random.seed(42)
+
+class GlobalBackgrounds():
+    def __init__(self):
+        self.applicable_backgrounds = []
+    def set_backgrounds(self, bgs_list):
+        self.applicable_backgrounds = bgs_list
+    def get_backgrounds(self):
+        return self.applicable_backgrounds
+
 def anchor_box_analyze():
     csv_boxes = pd.read_csv("data/vott/06_02_2022_BIG-export.csv")
     ratios = {0.15: 0,0.24: 0,0.33: 0,0.5: 0,0.66: 0,1: 0,1.5: 0,2: 0}
@@ -146,9 +157,28 @@ def superimpose(input_background,input_foreground,visible_part_alpha=0.5):
     input_background[:, :, 3] = (1 - (1 - alpha_foreground) * (1 - alpha_background)) * 255
     return input_background
 
-def render_to_background(renders_folder,backgrounds_folder,outputs_folder_suffix="",config_dict=None, samples_counter=0):
+def populate_backgrounds(backgrounds_folder, bg_number):
+    bg_object = GlobalBackgrounds()
+    applicable_backgrounds = bg_object.get_backgrounds()
+    if len(applicable_backgrounds) == bg_number: return
+    backgrounds_bag = []
+    for bg_file in os.listdir(backgrounds_folder):
+        if bg_file.endswith(".png"):
+            background_file = os.path.join(backgrounds_folder, bg_file)
+            backgrounds_bag.append(background_file)
+    while(len(applicable_backgrounds) < bg_number):
+        random_index = random.randint(0,len(backgrounds_bag)-1)
+
+        applicable_backgrounds.append(backgrounds_bag[random_index])
+    random.shuffle(applicable_backgrounds)
+    bg_object.set_backgrounds(applicable_backgrounds)
+    return bg_object
+
+def render_to_background(renders_folder,backgrounds_object,n_neg_per_pos=2,outputs_folder_suffix="",config_dict=None, samples_counter=0,output_root=""):
+    # n_neg_per_pos is every positive sample also causes 2 negative samples, so the ratios is calculated as n_neg_per_pos+1 (default 1 in 3 pos to neg ratio)
     list_of_anchors = []
-    output_root = "{}/../outputs{}".format(renders_folder,outputs_folder_suffix)
+    if output_root == "":
+        output_root = "{}/../outputs{}".format(renders_folder,outputs_folder_suffix)
 
     debug_mode = False
     poses_in_seperate_folders = False
@@ -164,24 +194,20 @@ def render_to_background(renders_folder,backgrounds_folder,outputs_folder_suffix
         do_salt_and_pepper_noise = config_dict["do_salt_and_pepper_noise"]
         do_alpha_blending = config_dict["do_alpha_blending"]
 
-    applicable_backgrounds = []
-    for bg_file in os.listdir(backgrounds_folder):
-        if bg_file.endswith(".png"):
-            background_file = os.path.join(backgrounds_folder, bg_file)
-            applicable_backgrounds.append(background_file)
-    random.shuffle(applicable_backgrounds)
+    applicable_backgrounds = backgrounds_object.get_backgrounds()
 
-    samples_len = len(os.listdir(renders_folder))
-    for fg_file in os.listdir(renders_folder):
+    samples_len = len(os.listdir(renders_folder)[samples_counter:])
+    for fg_file in os.listdir(renders_folder)[samples_counter:]:
         if not fg_file.endswith(".png"): continue
 
-        print("Processing {}/{}".format(samples_counter,samples_len))
+        print("Processing {}/{}".format(samples_counter, samples_len+samples_counter))
         render_file = os.path.join(renders_folder, fg_file)
         current_render = render_file
 
-        rand_index = random.randint(0,len(applicable_backgrounds)-1)
-        current_bg = applicable_backgrounds[rand_index]
+        current_bg = applicable_backgrounds[samples_counter]
         background = cv2.imread(current_bg)
+        original_unchanged_bg = background.copy()
+
         foreground_bbox = cv2.imread(current_render, cv2.IMREAD_UNCHANGED)
 
         B, G, R, A = cv2.split(foreground_bbox)   # makes transparency white, for easier bbox detection
@@ -262,7 +288,12 @@ def render_to_background(renders_folder,backgrounds_folder,outputs_folder_suffix
             os.makedirs("{}/all/".format(output_root))
 
         if save_img and poses_in_seperate_folders: cv2.imwrite(img_loc, background,[cv2.IMWRITE_PNG_COMPRESSION, 0])
-        if save_img: cv2.imwrite(img_loc_all, background,[cv2.IMWRITE_PNG_COMPRESSION, 0])
+        if save_img:
+            cv2.imwrite(img_loc_all, background,[cv2.IMWRITE_PNG_COMPRESSION, 0])
+            for x in range(n_neg_per_pos):
+                img_name = "{:04d}_pose_neg_sample_{}.png".format(samples_counter,x+1)
+                img_bg_loc_all = "{}/all/{}".format(output_root, img_name)
+                cv2.imwrite(img_bg_loc_all,original_unchanged_bg,[cv2.IMWRITE_PNG_COMPRESSION, 0])
         print("{} Done".format(img_loc_all))
         bbox_dict = {
             "image": img_name,
@@ -308,6 +339,11 @@ def render_to_background(renders_folder,backgrounds_folder,outputs_folder_suffix
 
 #anchor_box_analyze()
 #remove_images_from_folder("C:/Users/zanza/Desktop/predictions/renders/generated/transparent_bg/bg_test_synthetic","C:/Users/zanza/Desktop/MSC_work/Msc_Obj_Det/data/vott/run3_big/output/vott-csv-export/imgs_containing_bodies_list.txt")
+
+
+#background_object = populate_backgrounds("bg_folder",5001)
+#render_to_background("renders_folder",background_object)
+
 
 #render_to_background("C:/Users/zanza/Desktop/predictions/renders/generated/transparent_bg/renders/",
 #                     "C:/Users/zanza/Desktop/predictions/renders/generated/transparent_bg/bg_train_synthetic/")
