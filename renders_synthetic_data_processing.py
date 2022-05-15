@@ -5,9 +5,6 @@ import cv2
 import numpy as np
 import pandas as pd
 
-random.seed(42)
-np.random.seed(42)
-
 class GlobalBackgrounds():
     def __init__(self):
         self.applicable_backgrounds = []
@@ -90,6 +87,30 @@ def bool_to_str(boolean_val):
         return "1"
     else:
         return "0"
+
+def bb_one_time_fix(bbox_file,outputs_folder):
+    valid_names = []
+    for fg_file in os.listdir(outputs_folder):
+        if not fg_file.endswith("_bg.png"): continue
+        valid_names.append(fg_file)
+
+    with open(bbox_file, newline='') as f:
+        reader = csv.reader(f)
+        data = list(reader)
+    data = data[1:]
+    with open(bbox_file, 'w', newline='') as csvfile:
+        csv_writer = csv.writer(csvfile, delimiter=',', quotechar='\"', quoting=csv.QUOTE_ALL)
+        csv_writer.writerow(["image", "xmin", "ymin", "xmax", "ymax", "label"])
+        for index, bbox_arr in enumerate(data):
+            filename = valid_names[index]
+            xmin = bbox_arr[1]
+            ymin = bbox_arr[2]
+            xmax = bbox_arr[3]
+            ymax = bbox_arr[4]
+            label = bbox_arr[5]
+            if xmin == -1 or ymin == -1 or xmax == -1 or ymax == -1: continue
+            csv_writer.writerow([filename, xmin, ymin, xmax, ymax, label])
+    print("Bounding box csv file fixing finished")
 
 def noisy(image,mask,type): # TODO WIP seperate random noise profiles depending on certain body factors (hire me, im unemployed!)
     output = image.copy()
@@ -197,10 +218,11 @@ def render_to_background(renders_folder,backgrounds_object,n_neg_per_pos=2,outpu
     applicable_backgrounds = backgrounds_object.get_backgrounds()
 
     samples_len = len(os.listdir(renders_folder)[samples_counter:])
+    print_len = samples_len+samples_counter
     for fg_file in os.listdir(renders_folder)[samples_counter:]:
         if not fg_file.endswith(".png"): continue
 
-        print("Processing {}/{}".format(samples_counter, samples_len+samples_counter))
+        print("Processing {}/{}".format(samples_counter, print_len))
         render_file = os.path.join(renders_folder, fg_file)
         current_render = render_file
 
@@ -273,6 +295,7 @@ def render_to_background(renders_folder,backgrounds_object,n_neg_per_pos=2,outpu
 
         # background = cv2.rectangle(background, (xmin,ymin), (xmax,ymax), (0, 0, 255), thickness=1) # bbox visualization
         background = cv2.cvtColor(background, cv2.COLOR_BGRA2GRAY)
+        original_unchanged_bg = cv2.cvtColor(original_unchanged_bg, cv2.COLOR_RGB2GRAY)
 
         fg_prefix = fg_file.replace(".png", "")
         fg_prefix = "{}_pix{}_alpha{}_spnoise{}".format(fg_prefix,bool_to_str(do_pixelation),bool_to_str(do_alpha_blending),bool_to_str(do_salt_and_pepper_noise))
@@ -291,9 +314,9 @@ def render_to_background(renders_folder,backgrounds_object,n_neg_per_pos=2,outpu
         if save_img:
             cv2.imwrite(img_loc_all, background,[cv2.IMWRITE_PNG_COMPRESSION, 0])
             for x in range(n_neg_per_pos):
-                img_name = "{:04d}_pose_neg_sample_{}.png".format(samples_counter,x+1)
-                img_bg_loc_all = "{}/all/{}".format(output_root, img_name)
-                cv2.imwrite(img_bg_loc_all,original_unchanged_bg,[cv2.IMWRITE_PNG_COMPRESSION, 0])
+                neg_sample = "{:04d}_pose_neg_sample_{}.png".format(samples_counter,x+1)
+                neg_sample_loc_all = "{}/all/{}".format(output_root, neg_sample)
+                cv2.imwrite(neg_sample_loc_all,original_unchanged_bg,[cv2.IMWRITE_PNG_COMPRESSION, 0])
         print("{} Done".format(img_loc_all))
         bbox_dict = {
             "image": img_name,
@@ -336,15 +359,18 @@ def render_to_background(renders_folder,backgrounds_object,n_neg_per_pos=2,outpu
             csv_writer.writerow([filename,xmin,ymin,xmax,ymax,label])
     print("Bounding box csv file generation finished")
 
+def visualize_bboxfile(bbox_file_path,image_file_folder):
+    with open(bbox_file_path, newline='') as f:
+        reader = csv.reader(f)
+        data = list(reader)
+    data = data[1:]
+    for line in data:
+        img_path = "{}{}".format(image_file_folder, line[0])
+        pic = cv2.imread(img_path)
+        pic = cv2.rectangle(pic, (int(line[1]), int(line[2])), (int(line[3]), int(line[4])), (0,0,255), 1) # blue green red
+        cv2.imshow("bboxes visualized", pic)
+        cv2.waitKey(0)
+        cv2.destroyAllWindows()
 
-#anchor_box_analyze()
-#remove_images_from_folder("C:/Users/zanza/Desktop/predictions/renders/generated/transparent_bg/bg_test_synthetic","C:/Users/zanza/Desktop/MSC_work/Msc_Obj_Det/data/vott/run3_big/output/vott-csv-export/imgs_containing_bodies_list.txt")
 
-
-#background_object = populate_backgrounds("bg_folder",5001)
-#render_to_background("renders_folder",background_object)
-
-
-#render_to_background("C:/Users/zanza/Desktop/predictions/renders/generated/transparent_bg/renders/",
-#                     "C:/Users/zanza/Desktop/predictions/renders/generated/transparent_bg/bg_train_synthetic/")
-# comment when running for real
+#visualize_bboxfile("D:/generated_transparent_bg/outputs_first/bounding_boxes.csv","D:/generated_transparent_bg/outputs_first/all/")

@@ -450,12 +450,21 @@ if True: # to debug set this to false
         "do_alpha_blending": True,
     }
 
+    random.seed(42)
+    np.random.seed(42)
+
     bg_object = rsdp.populate_backgrounds(bg_folder,5001)
     # render_to_background("renders_folder",background_object)
 
+    #random.seed(42)
+    #np.random.seed(42)
     # first base is alpha -> s&p, second is pixel -> alpha -> s&p, third is just alpha
-    rsdp.render_to_background(save_folder,bg_object,output_root="D:/generated_transparent_bg/outputs_first",config_dict=config_dict_1)
+    #rsdp.render_to_background(save_folder,bg_object,output_root="D:/generated_transparent_bg/outputs_first",config_dict=config_dict_1)
 
+    #random.seed(42)
+    #np.random.seed(42)
     #rsdp.render_to_background(save_folder,bg_object,output_root="D:/generated_transparent_bg/outputs_second",config_dict=config_dict_2)
 
-    #rsdp.render_to_background(save_folder,bg_object,output_root="D:/generated_transparent_bg/outputs_third",config_dict=config_dict_3)
+    random.seed(42)
+    np.random.seed(42)
+    rsdp.render_to_background(save_folder,bg_object,output_root="D:/generated_transparent_bg/outputs_third",config_dict=config_dict_3)
