@@ -10,7 +10,7 @@ import random
 
 
 sys.path.append( 'C:/Users/zanza/Desktop/MSC_work/Msc_Obj_Det/' )
-import renders_synthetic_data_processing
+import renders_synthetic_data_processing as rsdp
 
 def set_pose(pose_index):
     deselect_all()
@@ -77,7 +77,7 @@ def set_pose(pose_index):
     reset_body_pos()
     
     main_pose = pose_index
-    base_name = "position{}_".format(main_pose)
+    base_name = "pose{}_".format(main_pose)
     '''
     if main_pose == -1: # POSE NOT APPLICABLE; SKIP
         case = random.randint(1,3)
@@ -182,8 +182,8 @@ def set_pose(pose_index):
         rotate_obj(neck,(33.2038,1.26253,-1.15656))
         
     if main_pose == 4 or main_pose == 3:
-        move_obj(spine,(0.095211,-0.027949,0.137238))
-        rotate_obj(spine,(6.41438,-0.000002,0.000001))
+        move_obj(spine,(0.095211,-0.029933,0.130611))
+        rotate_obj(spine,(-29.1303,0.000022,-0.000019))
         move_obj(ik_l_hand_anch,(-0.085021,0.0321,0.511855))
         move_obj(ik_r_hand_anch,(-0.222251,0.048074,0.414634))
         
@@ -195,29 +195,41 @@ def set_pose(pose_index):
     
     case = random.randint(1,4)
     if case == 1: pass # body is making normal contact with ground
-    if case == 2: move_obj(big_bone,(0,0.001331,-0.5),mode="increment") # body is deeper inside floor
-    if case == 3: move_obj(big_bone,(0,0.003889,-0.10),mode="increment") # body is very deep inside floor
+    if case == 2: move_obj(big_bone,(0,0.001331,-0.05),mode="increment") # body is deeper inside floor
+    if case == 3: move_obj(big_bone,(0,0.003889,-0.1),mode="increment") # body is very deep inside floor
     if case == 4: move_obj(big_bone,(0,0.005458,-0.2),mode="increment") # even deeper
-    base_name = "{}groundcntct{}_".format(base_name,case)
+    base_name = "{}submrgd{}_".format(base_name,case)
     
     # 6.suspended in water face up is rare in real life, because of limb weight, so it is not implemented
     
-    # arms have a range of 0.6
-    # legs have a range of 0.8
+    # arms have a max range of 0.6
+    # legs have a max range of 0.8 
     
-    if random.randint(0,1) == 1:
-        movements = random.randint(1,3)
-        ik_r_heel = hbp.bones['IK.heel.R']
-        ik_l_heel = hbp.bones['IK.heel.L']
-        ik_r_hand = hbp.bones['IK.hand.R']
-        ik_l_hand = hbp.bones['IK.hand.L']
-        limb_array = [(ik_r_heel,0.6),(ik_l_heel,0.6),(ik_r_hand,0.4),(ik_l_hand,0.4)]
-        random.shuffle(limb_array)
-        for x in range(movements):
-            obj = limb_array[x][0]
-            range_limb = random.uniform(-limb_array[x][1],limb_array[x][1])
-            move_obj(obj,(range_limb,0,range_limb),mode="increment")
-            print("Added limb variations")
+    ik_r_heel = hbp.bones['IK.heel.R']
+    ik_l_heel = hbp.bones['IK.heel.L']
+    ik_r_hand = hbp.bones['IK.hand.R']
+    ik_l_hand = hbp.bones['IK.hand.L']
+    limb_array = [(ik_r_heel,0.6,0.15,"rleg"),(ik_l_heel,0.6,0.15,"lleg"),(ik_r_hand,0.4,0.15,"rhand"),(ik_l_hand,0.4,0.15,"lhand")]
+    # each tuple = (limb object,max range of limb,decimal chance to occur,string name)
+    
+    base_name = "{}limbvar".format(base_name) # base_name = "{}limbvar0_".format(base_name)
+    made_limb_var = False
+    for limb_tuple in limb_array:
+        limb_chance = random.uniform(0, 1)
+        if limb_chance < limb_tuple[2]:
+            limb_obj = limb_tuple[0]
+            limb_str = limb_tuple[3]
+            min_range,max_range = -limb_tuple[1],limb_tuple[1]
+            x_loc = random.uniform(min_range,max_range)
+            z_loc = random.uniform(min_range,max_range) # y in global is z in this local coordinate system, because its relative to the pose, and its flipped
+            move_obj(limb_obj,(x_loc,0,z_loc),mode="increment")
+            made_limb_var = True
+            base_name = "{}x{}".format(base_name,limb_str)
+    if not made_limb_var:
+        base_name = "{}xnone_".format(base_name)
+    else:
+        base_name = "{}_".format(base_name)
+            
         
     return base_name
 
@@ -259,6 +271,7 @@ def reset_body_pos(): # only in object mode, bones can not be reset in this way
     bpy.ops.object.mode_set(mode="POSE")
     for obj in bones:
         obj.bone.select = True
+    
     bpy.ops.pose.transforms_clear()
 
 def deselect_all():
@@ -275,16 +288,16 @@ def randomize_sonar_angle(default=False): #effectively moves the light source up
     angle = ""
     distance = random.randint(1,4)
     if distance == 4:
-        z_pos = random.uniform(40, 80)
+        z_pos = random.uniform(50, 80)
         angle = "vblunt"
     elif distance == 3:
-        z_pos = random.uniform(20,40)
+        z_pos = random.uniform(30,50)
         angle = "blunt"
     elif distance == 2:
-        z_pos = random.uniform(10,20)
+        z_pos = random.uniform(20,30)
         angle = "sharp"
     else:
-        z_pos = random.uniform(5,10)
+        z_pos = random.uniform(15,20)
         angle = "vsharp"
     #body_y = bpy.data.objects['LightTrackObj'].location[1] # so that sonar rays are always perpendicular to body, like in real images
     #print(body_y) # i added a constraint trough the GUI, so the 0 y here gets ignored anyway, and the Y of the body is copied
@@ -292,7 +305,7 @@ def randomize_sonar_angle(default=False): #effectively moves the light source up
         spot.location = mathutils.Vector((34.3238,0,z_pos))
         return angle
     if default: 
-        spot.location = mathutils.Vector((34.3238,0,30)) # 30 z is default
+        spot.location = mathutils.Vector((34.3238,0,35)) # 35 z is default
         return "blunt"
     
 def randomize_body_rotation():
@@ -303,7 +316,7 @@ def randomize_body_rotation():
     big_bone = hbp.bones['Bone']
     rand_degrees = random.randint(0,360)
     rotate_obj(big_bone,(False,False,rand_degrees))
-    return "{}zdegrees_".format(rand_degrees)
+    return "zdeg{}_".format(rand_degrees)
 
 def randomize_body_position():
     deselect_all()
@@ -321,9 +334,22 @@ def randomize_body_position():
     current_z = big_bone.location[2] + newZ
     print("Move: y:{}, calc z:{}".format(rand_y,newZ))
     move_obj(big_bone,(rand_x,rand_y,current_z))
-    ret_string = "{}x_{}y_".format(round(rand_x, 2),round(rand_y, 2))
+    ret_string = "x{}_y{}_".format(round(rand_x, 2),round(rand_y, 2))
     ret_string = ret_string.replace("-","neg").replace(".","dot")
     return ret_string
+
+def randomize_body_scaling():
+    if random.randint(0,1) == 0:
+        return "scale1_"
+    scale = random.uniform(0.5, 1.1)
+    # 0.5 to 1.1 range in regard to original
+    deselect_all()
+    bpy.data.objects['metarig'].select_set(True)
+    bpy.ops.object.mode_set(mode="POSE")
+    bpy.ops.transform.resize(value=(scale, scale, scale))
+    deselect_all()
+    ret_str = "scale{}_".format(round(scale,2)).replace(".","dot")
+    return ret_str
 
 def render_scene(image_name,debug=False,frame=1):
     output_file = image_name
@@ -343,22 +369,33 @@ def render_scene(image_name,debug=False,frame=1):
 def generate_renders(output_folder,debug_folder):
     #widths of gt boxes min:23.80952380952381 max:603.3549783549784 avg:127.32661145509879
     #heights of gt boxes min:17.991004497751078 max:231.60173160173156 avg:50.13107902766274
-    print("start script")
+    print("Start script")
     existing_images_list = []
     randomize_sonar_angle(default=True)
     do_debug_render = False
     
-    do_render = False
+    do_render = True
     dynamic_sonar_angle = True
     dynamic_body_rotation = True
     dynamic_body_position = True
-    n_images_to_generate = 1
+    dynamic_body_scaling = True
+    n_images_to_generate = 869 #10000 for final
     
-    # pos 5_1 is most common with changes
+    # pos 5 is most common irl
     for x in range(n_images_to_generate): 
         print("Started {}/{}...".format(x,n_images_to_generate))
-        random_pose = max(random.randint(1,5), random.randint(1,5), random.randint(1,5))
-        # 5 is most likely, 4 is less, 3 is less, 1 and 2 are rare
+        pose_chance = random.uniform(0, 1)
+        if pose_chance < 0.40:
+            random_pose = 5
+        elif pose_chance < 0.60:
+            random_pose = 4
+        elif pose_chance < 0.80:
+            random_pose = 3
+        elif pose_chance < 0.90:
+            random_pose = 2 
+        elif pose_chance < 1:
+            random_pose = 1
+        # 5 is most likely, 4 and 3 is less, 1 and 2 are rare irl
         output_name = set_pose(random_pose)
         debug_name = output_name
         
@@ -369,6 +406,9 @@ def generate_renders(output_folder,debug_folder):
         if dynamic_body_position:
             x_y = randomize_body_position()
             output_name = "{}{}".format(output_name,x_y)
+        if dynamic_body_scaling:
+            scale_str = randomize_body_scaling()
+            output_name = "{}{}".format(output_name,scale_str)
         if dynamic_sonar_angle: 
             angle = randomize_sonar_angle()
             output_name = "{}{}".format(output_name,angle)
@@ -377,15 +417,54 @@ def generate_renders(output_folder,debug_folder):
             output_file = "{}{}".format(output_folder,output_name)
             if do_debug_render and debug_name not in '\t'.join(existing_images_list):
                 output_file_debug = "{}{}".format(debug_folder,debug_name)
-                render_scene(output_file_debug,debug=True)
-            render_scene(output_file,frame=100)
+                render_scene(output_file_debug,debug=True,frame=50)
+            render_scene(output_file,frame=50)
             existing_images_list.append(output_name)
         print("DONE: {}".format(output_name))
 
 
 save_folder = 'C:/Users/zanza/Desktop/predictions/renders/generated/transparent_bg/renders/'
 save_debug_folder = 'C:/Users/zanza/Desktop/predictions/renders/generated/transparent_bg/debug/'
-bg_folder = 'C:/Users/zanza/Desktop/predictions/renders/generated/transparent_bg/bg'
+bg_folder = 'C:/Users/zanza/Desktop/predictions/renders/generated/transparent_bg/bg_train_synthetic/'
+#bg_folder = 'C:/Users/zanza/Desktop/predictions/renders/generated/transparent_bg/bg/' # for testing
 
-generate_renders(save_folder,save_debug_folder)
-#renders_synthetic_data_processing.render_to_background(save_folder,bg_folder) # comment when testing
+print("---------Running new version with bg object-----------")
+#generate_renders(save_folder,save_debug_folder)
+
+
+if True: # to debug set this to false
+
+    config_dict_1 = {
+        "do_pixelation": False,
+        "do_salt_and_pepper_noise": True,
+        "do_alpha_blending": True,
+    }
+    config_dict_2 = {
+        "do_pixelation": True,
+        "do_salt_and_pepper_noise": True,
+        "do_alpha_blending": True,
+    }
+    config_dict_3 = {
+        "do_pixelation": False,
+        "do_salt_and_pepper_noise": False,
+        "do_alpha_blending": True,
+    }
+
+    random.seed(42)
+    np.random.seed(42)
+
+    bg_object = rsdp.populate_backgrounds(bg_folder,5001)
+    # render_to_background("renders_folder",background_object)
+
+    #random.seed(42)
+    #np.random.seed(42)
+    # first base is alpha -> s&p, second is pixel -> alpha -> s&p, third is just alpha
+    #rsdp.render_to_background(save_folder,bg_object,output_root="D:/generated_transparent_bg/outputs_first",config_dict=config_dict_1)
+
+    #random.seed(42)
+    #np.random.seed(42)
+    #rsdp.render_to_background(save_folder,bg_object,output_root="D:/generated_transparent_bg/outputs_second",config_dict=config_dict_2)
+
+    random.seed(42)
+    np.random.seed(42)
+    rsdp.render_to_background(save_folder,bg_object,output_root="D:/generated_transparent_bg/outputs_third",config_dict=config_dict_3)

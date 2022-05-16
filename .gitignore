@@ -1,6 +1,10 @@
 data/
+.idea/
+.ipynb_checkpoints/
+__pycache__/
 all_training_data/
 data_outputs/
 DatasetDistributions.png
 LossPlot.png
 unused/
+*.blend1

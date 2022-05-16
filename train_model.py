@@ -605,7 +605,7 @@ if __name__ == "__main__":
     c_cnf_body = 0
     c_anomaly = 0
 
-    train_set = [
+    train_set = [ # TODO these dont include the newly added data (2nd batch with 4-5 runs)
         '03-01-2020 Hoogezand, winschoterdiep',
         '09-06-2020 Velden',
         '16-08-20 Reuver',
@@ -691,14 +691,19 @@ if __name__ == "__main__":
         #A.Equalize(p=1),
     ], bbox_params=A.BboxParams(format='pascal_voc', label_fields=['class_labels']))
 
-    #train_dataset = SonarDataset(train,csv_file,sonar_transform,type="oversampled") # random oversampled real data set
-    train_dataset = SonarDataset(train_synth1,csv_file,sonar_transform) # synth set 1
+    output_folder = prefix+"data/vott/run3_big/output/vott-csv-export/"
+    train = output_folder + "train"
+    test = output_folder + "test"
+    dev = output_folder + "dev"
+
+    # train_dataset = SonarDataset(train,csv_file,sonar_transform,type="oversampled") # random oversampled real data set
+    train_dataset = SonarDataset(train_synth1, csv_file, sonar_transform)  # synth base set
     dev_dataset = SonarDataset(dev,csv_file,sonar_eval_transform)
     test_dataset = SonarDataset(test,csv_file,sonar_eval_transform)
 
     pretrain_coco = False # mutually exclusive
     pretrain_imagenet = False # mutually exclusive
-    weight_decay_val = 0.01 # 0 for real data
+    weight_decay_val = 0.0001 # 0 for real data
     bb_train_val = 5
     num_classes = 4  # bike + anomaly + confirmed_victim + background (debris is not used anymore)
     lr_val = 0.00001 # 0.0001 for real data
@@ -731,7 +736,7 @@ if __name__ == "__main__":
     rpn_sonar_anchor_gen = AnchorGenerator(
         anchor_sizes, aspect_ratios
     )
-    '''
+
     model = fasterrcnn_resnet18(
         pretrained_backbone=pretrain_imagenet,
         trainable_bb_layers=bb_train_val, # 5 is all (none are frozen)
@@ -748,6 +753,7 @@ if __name__ == "__main__":
         rpn_pre_nms_top_n_train=8000, rpn_pre_nms_top_n_test=8000,
         rpn_post_nms_top_n_train=4000, rpn_post_nms_top_n_test=4000, # 4000 got good results on test
     )
+    '''
     '''
         rpn_pre_nms_top_n_train (int): number of proposals to keep before applying NMS during training
         rpn_pre_nms_top_n_test (int): number of proposals to keep before applying NMS during testing
