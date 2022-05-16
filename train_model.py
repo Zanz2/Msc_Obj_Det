@@ -46,7 +46,7 @@ def fasterrcnn_resnet18(num_classes=91, pretrained_backbone=True,trainable_bb_la
     model = FasterRCNN(backbone, num_classes, **kwargs)
     return model
 
-def plot_x_y(train_loss,val_loss=[],mode="",path=""):
+def plot_x_y(train_loss,val_loss=[],f1_score_list=[],mode="",path=""):
     plt.clf()
     lim = 0.5
     if max(train_loss) > 0.5: lim = 1
@@ -62,25 +62,18 @@ def plot_x_y(train_loss,val_loss=[],mode="",path=""):
         plt.title("Evaluation accuracy")
         if os.path.isfile("{}EvalAccuracyPlot.png".format(path)): os.remove("{}EvalAccuracyPlot.png".format(path))
         plt.savefig("{}EvalAccuracyPlot.png".format(path), bbox_inches='tight')
-    if mode == "precision_recall_curve":
-        xlim = 0.5
-        if max(val_loss) > 0.5: xlim = 1
-        plt.plot(val_loss)
-        plt.plot(train_loss)
-        plt.ylim([0, lim])
-        plt.xlim([0, xlim])
-        plt.title("Precision is orange, recall is blue")
-        if os.path.isfile("{}PRPlot.png".format(path)): os.remove("{}PRPlot.png".format(path))
-        plt.savefig("{}PRPlot.png".format(path), bbox_inches='tight')
     if mode == "precision_recall":
         xlim = 0.5
         if max(val_loss) > 0.5: xlim = 1
         plt.ylim([0, lim])
         plt.xlim([0, xlim])
         plt.plot(val_loss, train_loss)
+        if len(f1_score_list) > 0:
+            plt.plot(f1_score_list,train_loss)
+
         plt.title("Precision is Y, recall is X")
-        if os.path.isfile("{}PRCurve_real.png".format(path)): os.remove("{}PRCurve_real.png".format(path))
-        plt.savefig("{}PRCurve_real.png".format(path), bbox_inches='tight')
+        if os.path.isfile("{}PRCurve.png".format(path)): os.remove("{}PRCurve.png".format(path))
+        plt.savefig("{}PRCurve.png".format(path), bbox_inches='tight')
 
 def obj_collate_fn(batch):
     return tuple(zip(*batch))
@@ -123,14 +116,13 @@ class SonarDataset(torch.utils.data.Dataset):
                 img_name_to_box[img_filename] = []
                 if self.type == "reduced":
                     reduced_set.append(img_filename)
-                    if asset["label"] == "confirmed_body":
-                        for x in range(3): reduced_set.append(img_filename)
             img_name_to_box[img_filename].append(
-                [asset["xmin"], asset["ymin"], asset["xmax"], asset["ymax"], self.label2id[asset["label"]]])
+                [int(asset["xmin"]), int(asset["ymin"]), int(asset["xmax"]), int(asset["ymax"]), self.label2id[asset["label"]]])
             if self.type == "oversampled" and asset["label"] == "confirmed_body":
-                for x in range(3): self.imgs.append(img_filename)
+                for x in range(2): self.imgs.append(img_filename) # TODO: probably reduce this further down (original data trained with 3)
 
         self.img2boxes = img_name_to_box
+        #print(img_name_to_box)
         if self.type == "reduced": self.imgs = reduced_set
 
     def get_image(self, idx):
@@ -230,7 +222,7 @@ def get_class_stats(vott_csv):
     return coverage_dict
 
 
-def visualize_bbox(image,bbox_list,gt_list=[],vis_pred_labels=[],gt_labels=[],vis_pred_scores=[],save=True,save_name=""):
+def visualize_bbox(pic,bbox_list,gt_list=[],vis_pred_labels=[],gt_labels=[],vis_pred_scores=[],save=True,save_name=""):
     if save and save_name=="": save_name = "image"
     if len(bbox_list) == 0:
         return
@@ -240,7 +232,6 @@ def visualize_bbox(image,bbox_list,gt_list=[],vis_pred_labels=[],gt_labels=[],vi
         2: "anomaly",
         4: "debris"
     }
-    pic = image # vis_pred_labels=vis_pred_labels,gt_labels=gt_labels
     for index, gt in enumerate(gt_list):
         pic = cv2.rectangle(pic, (int(gt[0]), int(gt[1])), (int(gt[2]), int(gt[3])), (0,255,0), 1) # blue green red
         if len(gt_labels) > 0: pic = cv2.putText(pic, id2label[gt_labels[index]], (int(gt[0])+10, int(gt[1])+10), cv2.FONT_HERSHEY_SIMPLEX,0.4, (0,255,0), 1, cv2.LINE_AA)
@@ -256,10 +247,10 @@ def visualize_bbox(image,bbox_list,gt_list=[],vis_pred_labels=[],gt_labels=[],vi
         else:
             save_name = "{}_FP".format(save_name)
         cv2.imwrite("{}.jpg".format(save_name),pic,[int(cv2.IMWRITE_JPEG_QUALITY), 96])
-        #print("{}.jpg".format(save_name))
     else:
         cv2.imshow("bboxes visualized", pic)
-        cv2.waitKey(0) # this freezes and crashes for some reason
+        cv2.waitKey(0)
+        cv2.destroyAllWindows()
 
 def tensor_to_img(tensor_array):
     tensor_array = tensor_array.cpu().detach().numpy()
@@ -283,7 +274,7 @@ def get_loss(data_loader,model,device):
     model.eval()
     return eval_loss
 
-def ruin_my_life(original_dict,score,type):
+def eval_accumulate(original_dict,score,type):
     if type == "TP":
         dict_score_min = int(score * 10)
         for key, value in original_dict["confidences"].items():
@@ -306,7 +297,7 @@ def ruin_my_life(original_dict,score,type):
                     original_dict["confidences"][key]["FP"] += 1
     return original_dict
 
-def custom_evaluate(res_dict,targets,current_dict,images=[],visualize=False,IOU_TRESHOLD = 0.5,SCORE_TRESHOLD = 0.25,MAX_NUM_DET=300000):
+def custom_evaluate(res_dict,targets,current_dict,images=[],visualize=False,IOU_TRESHOLD = 0.5,SCORE_TRESHOLD=0,MAX_NUM_DET=300000):
     current_dict["iou_treshold"] = IOU_TRESHOLD
     current_dict["confidence_treshold"] = SCORE_TRESHOLD
     current_dict["max_num_det"] = MAX_NUM_DET
@@ -320,9 +311,9 @@ def custom_evaluate(res_dict,targets,current_dict,images=[],visualize=False,IOU_
         current_dict["gt_total"] += len(gt_boxes)
 
         pred_scores = dict_for_img["scores"]
-        if True: # apply nms or not (mainly for debug)
+        if True: # apply nms or not (debug)
             #print("Scores before nms {}".format(len(pred_scores)))
-            pred_boxes_mask = nms(boxes=dict_for_img["boxes"], scores=dict_for_img["scores"], iou_threshold=0.4) # TODO testing 0.4 instead of 0.5
+            pred_boxes_mask = nms(boxes=dict_for_img["boxes"], scores=dict_for_img["scores"], iou_threshold=0.5) # TODO testing
             pred_boxes = dict_for_img["boxes"][pred_boxes_mask].tolist()
             pred_labels = dict_for_img["labels"][pred_boxes_mask].tolist()
             pred_scores = pred_scores[pred_boxes_mask].tolist()
@@ -337,7 +328,7 @@ def custom_evaluate(res_dict,targets,current_dict,images=[],visualize=False,IOU_
         if num_predictions == 0:
             current_dict["FN"] += len(gt_boxes)
             for unp_label in gt_labels:
-                if unp_label == 3: current_dict = ruin_my_life(current_dict, 0, "FN")
+                if unp_label == 3: current_dict = eval_accumulate(current_dict, 0, "FN")
             continue
 
         if num_predictions < MAX_NUM_DET:  # if it made less predictions than our max, use how many it made
@@ -378,14 +369,14 @@ def custom_evaluate(res_dict,targets,current_dict,images=[],visualize=False,IOU_
                 else:
                     current_dict["TP"] += 1
                     current_dict["correct_total"][label] += 1
-                if gt_label == 3: current_dict = ruin_my_life(current_dict, pred_scores[pred_index], "TP")
+                if gt_label == 3: current_dict = eval_accumulate(current_dict, pred_scores[pred_index], "TP")
                 detected = True
                 used_indexes.append(pred_index)
             if not detected:
                 current_dict["FN"] += 1
-                if gt_label == 3: current_dict = ruin_my_life(current_dict, 0, "FN")
+                if gt_label == 3: current_dict = eval_accumulate(current_dict, 0, "FN")
 
-        current_dict = ruin_my_life(current_dict, [pred_scores,used_indexes,pred_labels], "FP")
+        current_dict = eval_accumulate(current_dict, [pred_scores,used_indexes,pred_labels], "FP")
         current_dict["FP"] += (total_pred - len(used_indexes))
         if visualize:
             vis_pred_boxes = [box for index, box in enumerate(pred_boxes) if pred_scores[index] > SCORE_TRESHOLD]
@@ -553,9 +544,9 @@ def evaluate(model, data_loader, device, eval_visualize=False, score_threshold=0
         evaluator_time = time.time() - evaluator_time
         metric_logger.update(model_time=model_time, evaluator_time=evaluator_time)
 
-    #eval_loss = get_loss(data_loader,model,device)
-    #eval_loss = eval_loss / len(data_loader)
-    eval_loss = 0.01
+    eval_loss = get_loss(data_loader,model,device)
+    eval_loss = eval_loss / len(data_loader)
+    #eval_loss = 0.01
     cumulative_stats_dict["loss"] = eval_loss
 
     # gather the stats from all processes
@@ -577,24 +568,29 @@ def evaluate(model, data_loader, device, eval_visualize=False, score_threshold=0
 if __name__ == "__main__":
     # laptop = "C:/Users/zanza/Desktop/MSC_work/Msc_Obj_Det/"
     # desktop = "C:/Users/Moji podatki/Desktop/github/Msc_Obj_Det/"
-    prefix1 = "C:/Users/Moji podatki/Desktop/github/Msc_Obj_Det/"
+    prefix = "C:/Users/Moji podatki/Desktop/github/Msc_Obj_Det/"
     target = "conversions/vott_to_vgg_proj/empty_vgg_json.json"
     source = "conversions/vott_to_vgg_proj/source_vott_csv.csv"
-    target_folder = prefix1+"data/vott/run3_big/input"
-    csv_proj_file = prefix1+"data/vott/run3_big/output/vott-csv-export/06_02_2022_BIG-export.csv"
+    target_folder = prefix+"data/vott/run3_big/input"
 
-    info_dict = get_class_stats(csv_proj_file)
+    output_folder = prefix + "data/vott/run3_big/output/vott-csv-export/"
+    csv_file = output_folder + "06_02_2022_BIG-export_added_synth1.csv"
+    train = output_folder + "train"
+    test = output_folder + "test"
+    dev = output_folder + "dev"
+    train_synth1 = "F:/projekti/msc_sonar_models/synthetic_datasets/outputs_first/all"
 
+
+    info_dict = get_class_stats(csv_file)
     # go over all the confirmed bodies
-    vott_csv = pd.read_csv(csv_proj_file)
-    prefix = prefix1+"data/vott/run3_big/output/vott-csv-export/"
+    vott_csv = pd.read_csv(csv_file)
 
     you_want_to_do_this = False
     if you_want_to_do_this:
         for index,something in vott_csv.iterrows():
             real_name = something["image"]#unquote(something["image"])
             if not something["label"] == "confirmed_body": continue
-            path = prefix+real_name
+            path = output_folder+real_name
             im = Image.open(path)
             # This method will show image in any image viewer
             print(unquote(something["image"]))
@@ -623,14 +619,14 @@ if __name__ == "__main__":
         '09-07-2020 Giesbeek',
         '30-06-2020 Giesbeek'
     ]
-    dev_set = [
+    test_set = [
         '06-12-2020 Burdaard',
         '09-11-2020 wemeldinge_2',
         '09-11-2020 wemeldinge',
         'brummen',
         'Coverage_12-11-2020 Brummen'
     ]
-    test_set = [
+    dev_set = [
         '18-09-2020 stavoren',
         '27-03-2020 sluis Belfeld',
         '20-06-2020 Lemmer',
@@ -695,26 +691,22 @@ if __name__ == "__main__":
         #A.Equalize(p=1),
     ], bbox_params=A.BboxParams(format='pascal_voc', label_fields=['class_labels']))
 
-    output_folder = prefix1+"data/vott/run3_big/output/vott-csv-export/"
-    csv_file = output_folder+"06_02_2022_BIG-export.csv"
-    train = output_folder+"train"
-    test = output_folder+"test"
-    dev = output_folder+"dev"
-
-    train_dataset = SonarDataset(train,csv_file,sonar_transform,type="oversampled")
+    #train_dataset = SonarDataset(train,csv_file,sonar_transform,type="oversampled") # random oversampled real data set
+    train_dataset = SonarDataset(train_synth1,csv_file,sonar_transform) # synth set 1
     dev_dataset = SonarDataset(dev,csv_file,sonar_eval_transform)
     test_dataset = SonarDataset(test,csv_file,sonar_eval_transform)
 
-    #visualize(train_dataset[0][0])
-    #[x1, y1, x2, y2] format, with 0 <= x1 < x2 <= W and 0 <= y1 < y2 <= H.
-    # h, w, c = img.shape
-
     pretrain_coco = False # mutually exclusive
-    pretrain_imagenet = True # mutually exclusive
-    weight_decay_val = 0 # 0.00005
-    bb_train_val = 4
+    pretrain_imagenet = False # mutually exclusive
+    weight_decay_val = 0.01 # 0 for real data
+    bb_train_val = 5
     num_classes = 4  # bike + anomaly + confirmed_victim + background (debris is not used anymore)
-    lr_val = 0.0001 # 0.00005
+    lr_val = 0.00001 # 0.0001 for real data
+
+    train_mode = True # either train or eval
+    train_score_treshold = 0.0
+    vizualize_image_predictions_eval = False
+
 
     # top options: resnet50 or resnet18
     # bb_train_val 4 or use model from scratch
@@ -739,7 +731,7 @@ if __name__ == "__main__":
     rpn_sonar_anchor_gen = AnchorGenerator(
         anchor_sizes, aspect_ratios
     )
-
+    '''
     model = fasterrcnn_resnet18(
         pretrained_backbone=pretrain_imagenet,
         trainable_bb_layers=bb_train_val, # 5 is all (none are frozen)
@@ -756,7 +748,6 @@ if __name__ == "__main__":
         rpn_pre_nms_top_n_train=8000, rpn_pre_nms_top_n_test=8000,
         rpn_post_nms_top_n_train=4000, rpn_post_nms_top_n_test=4000, # 4000 got good results on test
     )
-    '''
     '''
         rpn_pre_nms_top_n_train (int): number of proposals to keep before applying NMS during training
         rpn_pre_nms_top_n_test (int): number of proposals to keep before applying NMS during testing
@@ -832,13 +823,10 @@ if __name__ == "__main__":
     eval_test = [ # in each of these folders there should be atleast 1 model that ends with .pt, and a folder of the same name (without .pt)
         "F:/projekti/msc_sonar_models/imagenet/",
         "F:/projekti/msc_sonar_models/coco/",
-        "F:/projekti/msc_sonar_models/r18_imagenet/",
         "F:/projekti/msc_sonar_models/scratch/"
     ]
 
-    vizualize_image_predictions_eval = False
-    train_score_treshold = 0.4
-    if True:
+    if train_mode:
         for epoch in range(num_epochs):
             logger, train_stats = train_one_epoch(model, optimizer, train_dataloader, device, epoch, print_every=250)
             train_loss = train_stats["loss"]
@@ -870,21 +858,22 @@ if __name__ == "__main__":
             accuracy_list.append(accuracy)
             precision_list.append(precision)
             recall_list.append(recall)
-            if (recall+precision) > (best_recall+best_precision):
+            if (recall+min(precision,0.1)) > (best_recall+best_precision): # the score treshold is probably 0.5, so 0.15 is a reasonable max precision before recall gets compromised
                 print("Improvement, saved model!")
                 torch.save(model, "saved_model.pt")
                 best_recall = recall
-                best_precision = precision
+                best_precision = min(precision,0.1)
 
             if epoch % 10 == 0:
                 torch.save(model, "F:/projekti/msc_sonar_models/saved_model_epoch{}.pt".format(epoch))
 
             plot_x_y(train_loss_list, val_loss_list, mode="loss_plot")
-            plot_x_y(precision_list, recall_list, mode="precision_recall_curve")
             plot_x_y(accuracy_list, mode="accuracy_plot")
             print("Eval custom metrics:")
             print("Total and correct labels to indexes {}".format(dev_dataset.label2id))
-            print(eval_stats)
+            print(eval_stats['correct_total']) # TODO expand or shrink this based on relevancy
+            print(eval_stats['correct_max'])
+            print(eval_stats['confidences'])
             print("class:{} precision:{} recall:{}".format(class_index,precision,recall))
             print("{}# epoch done, Train loss: {}, Validation loss: {}".format(epoch+1,train_loss,val_loss))
             print("---------------------------------------------------------------------")
@@ -905,6 +894,7 @@ if __name__ == "__main__":
 
                     precision_list = []
                     recall_list = []
+                    f1_list = []
                     for score_step in range(0,10):
                         if eval_stats["confidences"][score_step]["TP"] != 0:
                             tp = eval_stats["confidences"][score_step]["TP"]
@@ -912,16 +902,20 @@ if __name__ == "__main__":
                             fn = eval_stats["confidences"][score_step]["FN"]
                             precision = tp / (tp + fp)
                             recall = tp / (tp + fn)
+                            f1_score = 2 * ((precision * recall) / (precision + recall))
                         else:
                             precision = 0
                             recall = 0
+                            f1_score = 0
                         precision_list.append(precision)
                         recall_list.append(recall)
+                        f1_list.append(f1_score)
                     print("labels to indexes {}".format(dev_dataset.label2id))
                     print(eval_stats)
-                    print(recall_list)
-                    print(precision_list)
-                    plot_x_y(precision_list,recall_list, mode="precision_recall",path=global_eval_current_model_path+"/")
+                    print("Max recall:{}".format(max(recall_list)))
+                    print("Max precision:{}".format(max(precision_list)))
+                    print("Max f1:{}".format(max(f1_list)))
+                    plot_x_y(precision_list,recall_list,f1_score_list=f1_list,mode="precision_recall",path=global_eval_current_model_path+"/")
 
     print("That's it!")
 
