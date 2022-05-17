@@ -366,8 +366,13 @@ def visualize_bboxfile(bbox_file_path,image_file_folder):
         reader = csv.reader(f)
         data = list(reader)
     data = data[1:]
+    eligible_img_names = []
+    for img_file in os.listdir(image_file_folder):
+        if not img_file.endswith(".png"): continue
+        eligible_img_names.append(img_file)
     for line in data:
-        img_path = "{}{}".format(image_file_folder, line[0])
+        if line[0] not in eligible_img_names: continue
+        img_path = "{}/{}".format(image_file_folder, line[0])
         pic = cv2.imread(img_path)
         pic = cv2.rectangle(pic, (int(float(line[1])), int(float(line[2]))), (int(float(line[3])), int(float(line[4]))), (0,0,255), 1) # blue green red
         cv2.imshow("bboxes visualized", pic)

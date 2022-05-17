@@ -21,6 +21,7 @@ import utils2
 import math
 import sys
 import time
+from renders_synthetic_data_processing import visualize_bboxfile
 import torch
 import torchvision.models.detection.mask_rcnn
 
@@ -574,11 +575,11 @@ if __name__ == "__main__":
     target_folder = prefix+"data/vott/run3_big/input"
 
     output_folder = prefix + "data/vott/run3_big/output/vott-csv-export/"
-    csv_file = output_folder + "06_02_2022_BIG-export_added_synth1.csv"
+    csv_file = output_folder + "06_02_2022_BIG-export_added_synth.csv"
     train = output_folder + "train"
     test = output_folder + "test"
     dev = output_folder + "dev"
-    train_synth1 = "F:/projekti/msc_sonar_models/synthetic_datasets/outputs_first/all"
+    train_synth1 = "F:/projekti/msc_sonar_models/synthetic_datasets/train_synth/outputs_first/all"
 
 
     info_dict = get_class_stats(csv_file)
@@ -679,7 +680,6 @@ if __name__ == "__main__":
 
     sonar_transform = A.Compose([ # strecthing, different intensities probably safe
         A.RandomCrop(width=1000, height=400),
-        #A.RandomResizedCrop(350),
         A.VerticalFlip(p=0.5),
         A.RandomBrightnessContrast(p=0.35),
         A.RandomGamma(p=0.35),
@@ -696,31 +696,32 @@ if __name__ == "__main__":
     test = output_folder + "test"
     dev = output_folder + "dev"
 
-    # train_dataset = SonarDataset(train,csv_file,sonar_transform,type="oversampled") # random oversampled real data set
-    train_dataset = SonarDataset(train_synth1, csv_file, sonar_transform)  # synth base set
+    train_dataset = SonarDataset(train,csv_file,sonar_transform,type="oversampled") # random oversampled real data set
+    #train_dataset = SonarDataset(train_synth1, csv_file, sonar_transform)  # synth base set
     dev_dataset = SonarDataset(dev,csv_file,sonar_eval_transform)
     test_dataset = SonarDataset(test,csv_file,sonar_eval_transform)
 
     pretrain_coco = False # mutually exclusive
     pretrain_imagenet = False # mutually exclusive
-    weight_decay_val = 0.0001 # 0 for real data
+    weight_decay_val = 0 # 0 for real data
     bb_train_val = 5
     num_classes = 4  # bike + anomaly + confirmed_victim + background (debris is not used anymore)
     lr_val = 0.00001 # 0.0001 for real data
 
     train_mode = True # either train or eval
-    train_score_treshold = 0.0
+    train_score_treshold = 0.0 # this is useful because its a proxy for the tradeoff between precision and recall (0.5 is a good value)
     vizualize_image_predictions_eval = False
 
 
     # top options: resnet50 or resnet18
     # bb_train_val 4 or use model from scratch
 
-    print("Sum annotated bodies:{}, anomalies:{}, debris:{}, bikes:{}".format(c_cnf_body, c_anomaly, c_debris, c_bikes))
+    #print("Sum annotated bodies:{}, anomalies:{}, debris:{}, bikes:{}".format(c_cnf_body, c_anomaly, c_debris, c_bikes))
     print("Original shape:{}, new transformed shape:{}".format(train_dataset.get_image(21).shape,train_dataset[21][0].shape))
     print("{} to {}".format(torch.min(train_dataset[21][0]),torch.max(train_dataset[21][0])))
     print(train_dataset[21][0].is_cuda)
     print(train_dataset[21][1])
+    #visualize_bboxfile(csv_file,train_synth1) # see bboxes
     print(train_dataset[21][1]["boxes"].shape)
     print("Number of images train:{}, dev:{}, test:{}".format(len(train_dataset),len(dev_dataset),len(test_dataset)))
     print(device)
@@ -741,8 +742,9 @@ if __name__ == "__main__":
         pretrained_backbone=pretrain_imagenet,
         trainable_bb_layers=bb_train_val, # 5 is all (none are frozen)
         rpn_anchor_generator=rpn_sonar_anchor_gen,
-        rpn_pre_nms_top_n_train=8000, rpn_pre_nms_top_n_test=8000,
+        rpn_pre_nms_top_n_train=8000, rpn_pre_nms_top_n_test=8000, # 8000 got good results on test
         rpn_post_nms_top_n_train=4000, rpn_post_nms_top_n_test=4000, # 4000 got good results on test
+        image_mean=[0.199, 0.199, 0.199], image_std=[0.058, 0.058, 0.058], # sonar train set values
     )
     '''
     model = torchvision.models.detection.fasterrcnn_resnet50_fpn(
@@ -750,8 +752,9 @@ if __name__ == "__main__":
         pretrained_backbone=pretrain_imagenet,
         trainable_backbone_layers=bb_train_val, # 5 is all (none are frozen)
         rpn_anchor_generator=rpn_sonar_anchor_gen, # cannot be pretrained on coco with this anchor generator
-        rpn_pre_nms_top_n_train=8000, rpn_pre_nms_top_n_test=8000,
+        rpn_pre_nms_top_n_train=8000, rpn_pre_nms_top_n_test=8000, # 8000 got good results on test
         rpn_post_nms_top_n_train=4000, rpn_post_nms_top_n_test=4000, # 4000 got good results on test
+        image_mean=[0.199, 0.199, 0.199], image_std=[0.058, 0.058, 0.058], # sonar train set values
     )
     '''
     '''
