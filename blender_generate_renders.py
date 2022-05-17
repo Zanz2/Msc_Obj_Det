@@ -366,7 +366,7 @@ def render_scene(image_name,debug=False,frame=1):
     scene.frame_set(frame)
     bpy.ops.render.render(write_still=True)
 
-def generate_renders(output_folder,debug_folder):
+def generate_renders(output_folder,debug_folder,n_imgs):
     #widths of gt boxes min:23.80952380952381 max:603.3549783549784 avg:127.32661145509879
     #heights of gt boxes min:17.991004497751078 max:231.60173160173156 avg:50.13107902766274
     print("Start script")
@@ -379,7 +379,7 @@ def generate_renders(output_folder,debug_folder):
     dynamic_body_rotation = True
     dynamic_body_position = True
     dynamic_body_scaling = True
-    n_images_to_generate = 869 #10000 for final
+    n_images_to_generate = n_imgs
     
     # pos 5 is most common irl
     for x in range(n_images_to_generate): 
@@ -423,18 +423,21 @@ def generate_renders(output_folder,debug_folder):
         print("DONE: {}".format(output_name))
 
 
-save_folder = 'C:/Users/zanza/Desktop/predictions/renders/generated/transparent_bg/renders/'
+save_folder = 'C:/Users/zanza/Desktop/predictions/renders/generated/transparent_bg/renders_train/'
 save_debug_folder = 'C:/Users/zanza/Desktop/predictions/renders/generated/transparent_bg/debug/'
+#bg_folder = 'D:/generated_transparent_bg/bg_dev_synthetic/'
 bg_folder = 'C:/Users/zanza/Desktop/predictions/renders/generated/transparent_bg/bg_train_synthetic/'
-#bg_folder = 'C:/Users/zanza/Desktop/predictions/renders/generated/transparent_bg/bg/' # for testing
 
 print("---------Running new version with bg object-----------")
-#generate_renders(save_folder,save_debug_folder)
 
+#generate_renders(save_folder,save_debug_folder,300)
 
-if True: # to debug set this to false
+# train random seed is 42, test is 1337, dev is 28
+# train has 2 neg per pos, dev 6 and test 9
 
-    config_dict_1 = {
+if True: # to not generate the post processing
+
+    config_dict_base = {
         "do_pixelation": False,
         "do_salt_and_pepper_noise": True,
         "do_alpha_blending": True,
@@ -450,21 +453,20 @@ if True: # to debug set this to false
         "do_alpha_blending": True,
     }
 
-    random.seed(42)
-    np.random.seed(42)
+    random.seed(28)
+    np.random.seed(28)
 
-    bg_object = rsdp.populate_backgrounds(bg_folder,5001)
-    # render_to_background("renders_folder",background_object)
+    bg_object = rsdp.populate_backgrounds(bg_folder,3000)
 
-    #random.seed(42)
-    #np.random.seed(42)
+    #random.seed(28)
+    #np.random.seed(28)
     # first base is alpha -> s&p, second is pixel -> alpha -> s&p, third is just alpha
-    #rsdp.render_to_background(save_folder,bg_object,output_root="D:/generated_transparent_bg/outputs_first",config_dict=config_dict_1)
+    #rsdp.render_to_background(save_folder,bg_object,n_neg_per_pos=6,output_root="D:/generated_transparent_bg/dev_synth/outputs_base_dev",config_dict=config_dict_base)
 
-    #random.seed(42)
-    #np.random.seed(42)
-    #rsdp.render_to_background(save_folder,bg_object,output_root="D:/generated_transparent_bg/outputs_second",config_dict=config_dict_2)
+    #random.seed(28)
+    #np.random.seed(28)
+    #rsdp.render_to_background(save_folder,bg_object,n_neg_per_pos=6,output_root="D:/generated_transparent_bg/dev_synth/outputs_2_dev",config_dict=config_dict_2)
 
-    random.seed(42)
-    np.random.seed(42)
-    rsdp.render_to_background(save_folder,bg_object,output_root="D:/generated_transparent_bg/outputs_third",config_dict=config_dict_3)
+    #random.seed(28)
+    #np.random.seed(28)
+    #rsdp.render_to_background(save_folder,bg_object,n_neg_per_pos=6,output_root="D:/generated_transparent_bg/dev_synth/outputs_3_dev",config_dict=config_dict_3)

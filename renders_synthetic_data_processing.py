@@ -12,9 +12,11 @@ class GlobalBackgrounds():
         self.applicable_backgrounds = bgs_list
     def get_backgrounds(self):
         return self.applicable_backgrounds
+    def get_background(self):
+        return self.applicable_backgrounds[random.randint(0,len(self.applicable_backgrounds)-1)]
 
-def anchor_box_analyze():
-    csv_boxes = pd.read_csv("data/vott/06_02_2022_BIG-export.csv")
+def anchor_box_analyze(anchor_box_file_path):
+    csv_boxes = pd.read_csv(anchor_box_file_path)
     ratios = {0.15: 0,0.24: 0,0.33: 0,0.5: 0,0.66: 0,1: 0,1.5: 0,2: 0}
     # anchor_sizes = ((25,), (75,), (150,), (300,),(400,))
     sizes = {20: 0,40: 0,60: 0,90: 0,280: 0}
@@ -178,7 +180,7 @@ def superimpose(input_background,input_foreground,visible_part_alpha=0.5):
     input_background[:, :, 3] = (1 - (1 - alpha_foreground) * (1 - alpha_background)) * 255
     return input_background
 
-def populate_backgrounds(backgrounds_folder, bg_number):
+def populate_backgrounds(backgrounds_folder, bg_number): #TODO debug
     bg_object = GlobalBackgrounds()
     applicable_backgrounds = bg_object.get_backgrounds()
     if len(applicable_backgrounds) == bg_number: return
@@ -191,8 +193,8 @@ def populate_backgrounds(backgrounds_folder, bg_number):
         random_index = random.randint(0,len(backgrounds_bag)-1)
 
         applicable_backgrounds.append(backgrounds_bag[random_index])
-    random.shuffle(applicable_backgrounds)
-    bg_object.set_backgrounds(applicable_backgrounds)
+    random.shuffle(backgrounds_bag)
+    bg_object.set_backgrounds(backgrounds_bag)
     return bg_object
 
 def render_to_background(renders_folder,backgrounds_object,n_neg_per_pos=2,outputs_folder_suffix="",config_dict=None, samples_counter=0,output_root=""):
@@ -215,7 +217,6 @@ def render_to_background(renders_folder,backgrounds_object,n_neg_per_pos=2,outpu
         do_salt_and_pepper_noise = config_dict["do_salt_and_pepper_noise"]
         do_alpha_blending = config_dict["do_alpha_blending"]
 
-    applicable_backgrounds = backgrounds_object.get_backgrounds()
 
     samples_len = len(os.listdir(renders_folder)[samples_counter:])
     print_len = samples_len+samples_counter
@@ -225,10 +226,8 @@ def render_to_background(renders_folder,backgrounds_object,n_neg_per_pos=2,outpu
         print("Processing {}/{}".format(samples_counter, print_len))
         render_file = os.path.join(renders_folder, fg_file)
         current_render = render_file
-
-        current_bg = applicable_backgrounds[samples_counter]
+        current_bg = backgrounds_object.get_background()
         background = cv2.imread(current_bg)
-        original_unchanged_bg = background.copy()
 
         foreground_bbox = cv2.imread(current_render, cv2.IMREAD_UNCHANGED)
 
@@ -295,7 +294,6 @@ def render_to_background(renders_folder,backgrounds_object,n_neg_per_pos=2,outpu
 
         # background = cv2.rectangle(background, (xmin,ymin), (xmax,ymax), (0, 0, 255), thickness=1) # bbox visualization
         background = cv2.cvtColor(background, cv2.COLOR_BGRA2GRAY)
-        original_unchanged_bg = cv2.cvtColor(original_unchanged_bg, cv2.COLOR_RGB2GRAY)
 
         fg_prefix = fg_file.replace(".png", "")
         fg_prefix = "{}_pix{}_alpha{}_spnoise{}".format(fg_prefix,bool_to_str(do_pixelation),bool_to_str(do_alpha_blending),bool_to_str(do_salt_and_pepper_noise))
@@ -312,11 +310,15 @@ def render_to_background(renders_folder,backgrounds_object,n_neg_per_pos=2,outpu
 
         if save_img and poses_in_seperate_folders: cv2.imwrite(img_loc, background,[cv2.IMWRITE_PNG_COMPRESSION, 0])
         if save_img:
-            cv2.imwrite(img_loc_all, background,[cv2.IMWRITE_PNG_COMPRESSION, 0])
+            pos_sample = background
+            cv2.imwrite(img_loc_all, pos_sample,[cv2.IMWRITE_PNG_COMPRESSION, 0])
             for x in range(n_neg_per_pos):
                 neg_sample = "{:04d}_pose_neg_sample_{}.png".format(samples_counter,x+1)
                 neg_sample_loc_all = "{}/all/{}".format(output_root, neg_sample)
-                cv2.imwrite(neg_sample_loc_all,original_unchanged_bg,[cv2.IMWRITE_PNG_COMPRESSION, 0])
+                rand_bg = backgrounds_object.get_background()
+                rand_bg = cv2.imread(rand_bg)
+                rand_bg = cv2.cvtColor(rand_bg, cv2.COLOR_RGB2GRAY)
+                cv2.imwrite(neg_sample_loc_all,rand_bg,[cv2.IMWRITE_PNG_COMPRESSION, 0])
         print("{} Done".format(img_loc_all))
         bbox_dict = {
             "image": img_name,
