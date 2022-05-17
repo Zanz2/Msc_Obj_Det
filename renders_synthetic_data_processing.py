@@ -369,10 +369,25 @@ def visualize_bboxfile(bbox_file_path,image_file_folder):
     for line in data:
         img_path = "{}{}".format(image_file_folder, line[0])
         pic = cv2.imread(img_path)
-        pic = cv2.rectangle(pic, (int(line[1]), int(line[2])), (int(line[3]), int(line[4])), (0,0,255), 1) # blue green red
+        pic = cv2.rectangle(pic, (int(float(line[1])), int(float(line[2]))), (int(float(line[3])), int(float(line[4]))), (0,0,255), 1) # blue green red
         cv2.imshow("bboxes visualized", pic)
         cv2.waitKey(0)
         cv2.destroyAllWindows()
 
+def calculate_norm_and_std(image_folder_path):
+    matrix_mean = []
+    for index, img_file in enumerate(os.listdir(image_folder_path)):
+        if not img_file.endswith(".png"): continue
+        if index % 800 == 0: print(index)
+        img_file_read = os.path.join(image_folder_path, img_file)
+
+        image = cv2.imread(img_file_read)
+        image = image.astype(np.uint8)
+        img = np.transpose(image, [2, 0, 1])
+        img = img / 255  # 0 to 1 range
+        matrix_mean.append(np.mean(np.array(img[0]))) # its grayscale so all channels are the same
+    print("Images mean: {}".format(np.mean(matrix_mean))) # for 500 its 0.2253309, for full train set its: 0.19964
+    print("Images std: {}".format(np.std(matrix_mean)))   # for 500 its 0.1186108, for full train set its: 0.0582186
 
 #visualize_bboxfile("D:/generated_transparent_bg/outputs_first/bounding_boxes.csv","D:/generated_transparent_bg/outputs_first/all/")
+#calculate_norm_and_std("D:/generated_transparent_bg/bg_train_synthetic/")
