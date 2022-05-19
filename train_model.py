@@ -25,7 +25,7 @@ from renders_synthetic_data_processing import visualize_bboxfile
 import torch
 import torchvision.models.detection.mask_rcnn
 
-from torchvision.ops import nms
+from torchvision.ops import nms, sigmoid_focal_loss
 from coco_eval import CocoEvaluator
 from coco_utils import get_coco_api_from_dataset
 from torch import FloatTensor, LongTensor, nn, optim
@@ -57,12 +57,12 @@ def plot_x_y(train_loss,val_loss=[],f1_score_list=[],mode="",path=""):
         plt.title("Train is blue, eval is orange")
         if os.path.isfile("LossPlot.png"): os.remove("LossPlot.png")
         plt.savefig("LossPlot.png", bbox_inches='tight')
-    if mode == "accuracy_plot":
+    if mode == "f1_plot":
         plt.plot(train_loss)
         plt.ylim([0, lim])
-        plt.title("Evaluation accuracy")
-        if os.path.isfile("{}EvalAccuracyPlot.png".format(path)): os.remove("{}EvalAccuracyPlot.png".format(path))
-        plt.savefig("{}EvalAccuracyPlot.png".format(path), bbox_inches='tight')
+        plt.title("Evaluation f1")
+        if os.path.isfile("{}EvalF1Plot.png".format(path)): os.remove("{}EvalF1Plot.png".format(path))
+        plt.savefig("{}EvalF1Plot.png".format(path), bbox_inches='tight')
     if mode == "precision_recall":
         xlim = 0.5
         if max(val_loss) > 0.5: xlim = 1
@@ -83,7 +83,7 @@ def round_down(x, a):
     return math.floor(x / a) * a
 
 class SonarDataset(torch.utils.data.Dataset):
-    def __init__(self, root, csv_file, transforms, type="normal"):
+    def __init__(self, root, csv_file, transforms, type="normal",ignored_list=[]):
         self.type = type
         self.root = root
         self.transforms = transforms
@@ -96,34 +96,25 @@ class SonarDataset(torch.utils.data.Dataset):
 
         #self.imgs = self.imgs[0:int(len(self.imgs)*0.1)] # MAKE IT FAST FOR DEBUGGING
 
-
         csv_boxes = pd.read_csv(csv_file)
 
-        self.label2id = {
-            "bike": 1,
-            "confirmed_body": 3,
-            "anomaly": 2,
-            "debris": 4
-        }
         reduced_set = []
         img_name_to_box = {}
         for index, asset in csv_boxes.iterrows():
             img_filename = asset["image"]
 
-            if img_filename not in self.imgs or asset["label"] == "debris": continue  # if the image isnt in this folder but in the json skip it
+            if img_filename not in self.imgs or asset["label"] in ignored_list: continue  # if the image isnt in this folder but in the json skip it
             # this is so i can create a test train split
-
             if img_filename not in img_name_to_box:
                 img_name_to_box[img_filename] = []
                 if self.type == "reduced":
                     reduced_set.append(img_filename)
             img_name_to_box[img_filename].append(
-                [int(asset["xmin"]), int(asset["ymin"]), int(asset["xmax"]), int(asset["ymax"]), self.label2id[asset["label"]]])
+                [int(asset["xmin"]), int(asset["ymin"]), int(asset["xmax"]), int(asset["ymax"]), global_label2id[asset["label"]]])
             if self.type == "oversampled" and asset["label"] == "confirmed_body":
-                for x in range(2): self.imgs.append(img_filename) # TODO: probably reduce this further down (original data trained with 3)
+                for x in range(2): self.imgs.append(img_filename)
 
         self.img2boxes = img_name_to_box
-        #print(img_name_to_box)
         if self.type == "reduced": self.imgs = reduced_set
 
     def get_image(self, idx):
@@ -227,19 +218,13 @@ def visualize_bbox(pic,bbox_list,gt_list=[],vis_pred_labels=[],gt_labels=[],vis_
     if save and save_name=="": save_name = "image"
     if len(bbox_list) == 0:
         return
-    id2label = {
-        1: "bike",
-        3: "confirmed_body",
-        2: "anomaly",
-        4: "debris"
-    }
     for index, gt in enumerate(gt_list):
         pic = cv2.rectangle(pic, (int(gt[0]), int(gt[1])), (int(gt[2]), int(gt[3])), (0,255,0), 1) # blue green red
-        if len(gt_labels) > 0: pic = cv2.putText(pic, id2label[gt_labels[index]], (int(gt[0])+10, int(gt[1])+10), cv2.FONT_HERSHEY_SIMPLEX,0.4, (0,255,0), 1, cv2.LINE_AA)
+        if len(gt_labels) > 0: pic = cv2.putText(pic, global_id2label[gt_labels[index]], (int(gt[0]) + 10, int(gt[1]) + 10), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 255, 0), 1, cv2.LINE_AA)
     for index, bbox in enumerate(bbox_list):
         pic = cv2.rectangle(pic, (int(bbox[0]), int(bbox[1])), (int(bbox[2]), int(bbox[3])), (0,0,255), 1) # blue green red
         label_score_string = " "
-        if len(vis_pred_labels) > 0: label_score_string += id2label[vis_pred_labels[index]]
+        if len(vis_pred_labels) > 0: label_score_string += global_id2label[vis_pred_labels[index]]
         if len(vis_pred_scores) > 0: label_score_string += " "+str(vis_pred_scores[index])[0:4]
         pic = cv2.putText(pic,label_score_string, (int(bbox[0]) + 10, int(bbox[1]) + 10),cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 0, 255), 1, cv2.LINE_AA)
     if save:
@@ -291,14 +276,14 @@ def eval_accumulate(original_dict,score,type):
         used_indexes = score[1]
         labels = score[2]
         for index, score_val in enumerate(scores):
-            if index in used_indexes or labels[index] != 3: continue
+            if index in used_indexes or labels[index] != global_label2id["confirmed_body"]: continue
             dict_score_min = int(score_val*10)
             for key, value in original_dict["confidences"].items():
                 if dict_score_min >= key:
                     original_dict["confidences"][key]["FP"] += 1
     return original_dict
 
-def custom_evaluate(res_dict,targets,current_dict,images=[],visualize=False,IOU_TRESHOLD = 0.5,SCORE_TRESHOLD=0,MAX_NUM_DET=300000):
+def custom_evaluate(res_dict,targets,current_dict,images=[],visualize=False,IOU_TRESHOLD = 0.5,SCORE_TRESHOLD=0,MAX_NUM_DET=20000):
     current_dict["iou_treshold"] = IOU_TRESHOLD
     current_dict["confidence_treshold"] = SCORE_TRESHOLD
     current_dict["max_num_det"] = MAX_NUM_DET
@@ -313,12 +298,10 @@ def custom_evaluate(res_dict,targets,current_dict,images=[],visualize=False,IOU_
 
         pred_scores = dict_for_img["scores"]
         if True: # apply nms or not (debug)
-            #print("Scores before nms {}".format(len(pred_scores)))
             pred_boxes_mask = nms(boxes=dict_for_img["boxes"], scores=dict_for_img["scores"], iou_threshold=0.5) # TODO testing
             pred_boxes = dict_for_img["boxes"][pred_boxes_mask].tolist()
             pred_labels = dict_for_img["labels"][pred_boxes_mask].tolist()
             pred_scores = pred_scores[pred_boxes_mask].tolist()
-            #print("Scores after nms {}".format(len(pred_scores)))
         else:
             pred_boxes = dict_for_img["boxes"].tolist()
             pred_labels = dict_for_img["labels"].tolist()
@@ -329,7 +312,7 @@ def custom_evaluate(res_dict,targets,current_dict,images=[],visualize=False,IOU_
         if num_predictions == 0:
             current_dict["FN"] += len(gt_boxes)
             for unp_label in gt_labels:
-                if unp_label == 3: current_dict = eval_accumulate(current_dict, 0, "FN")
+                if unp_label == global_label2id["confirmed_body"]: current_dict = eval_accumulate(current_dict, 0, "FN")
             continue
 
         if num_predictions < MAX_NUM_DET:  # if it made less predictions than our max, use how many it made
@@ -370,12 +353,12 @@ def custom_evaluate(res_dict,targets,current_dict,images=[],visualize=False,IOU_
                 else:
                     current_dict["TP"] += 1
                     current_dict["correct_total"][label] += 1
-                if gt_label == 3: current_dict = eval_accumulate(current_dict, pred_scores[pred_index], "TP")
+                if gt_label == global_label2id["confirmed_body"]: current_dict = eval_accumulate(current_dict, pred_scores[pred_index], "TP")
                 detected = True
                 used_indexes.append(pred_index)
             if not detected:
                 current_dict["FN"] += 1
-                if gt_label == 3: current_dict = eval_accumulate(current_dict, 0, "FN")
+                if gt_label == global_label2id["confirmed_body"]: current_dict = eval_accumulate(current_dict, 0, "FN")
 
         current_dict = eval_accumulate(current_dict, [pred_scores,used_indexes,pred_labels], "FP")
         current_dict["FP"] += (total_pred - len(used_indexes))
@@ -392,7 +375,7 @@ def custom_evaluate(res_dict,targets,current_dict,images=[],visualize=False,IOU_
 
     return current_dict
 
-def train_one_epoch(model, optimizer, data_loader, device, epoch, scaler=None, print_every=50):
+def train_one_epoch(model, optimizer, data_loader, device, epoch, scaler=None, print_every=250):
     model.train()
     metric_logger = utils2.MetricLogger(delimiter="  ")
     metric_logger.add_meter("lr", utils2.SmoothedValue(window_size=1, fmt="{value:.6f}"))
@@ -489,7 +472,7 @@ def _get_iou_types(model):
 
 
 @torch.inference_mode()
-def evaluate(model, data_loader, device, eval_visualize=False, score_threshold=0):
+def evaluate(model, data_loader, device, eval_visualize=False):
     n_threads = torch.get_num_threads()
     # FIXME remove this and make paste_masks_in_image run on the GPU
     torch.set_num_threads(1)
@@ -538,7 +521,7 @@ def evaluate(model, data_loader, device, eval_visualize=False, score_threshold=0
         model_time = time.time() - model_time
 
         res = {target["image_id"].item(): output for target, output in zip(targets, outputs)}
-        cumulative_stats_dict = custom_evaluate(res,targets,cumulative_stats_dict,images=images,visualize=eval_visualize,SCORE_TRESHOLD=score_threshold)
+        cumulative_stats_dict = custom_evaluate(res,targets,cumulative_stats_dict,images=images,visualize=eval_visualize)
 
         evaluator_time = time.time()
         coco_evaluator.update(res)
@@ -566,6 +549,9 @@ def evaluate(model, data_loader, device, eval_visualize=False, score_threshold=0
     torch.set_num_threads(n_threads)
     return coco_evaluator, cumulative_stats_dict
 
+
+global_label2id = { "confirmed_body": 1, "bike": 2, "anomaly": 3, "debris": 4}
+global_id2label = {1: "confirmed_body",2: "bike", 3: "anomaly", 4: "debris"}
 if __name__ == "__main__":
     # laptop = "C:/Users/zanza/Desktop/MSC_work/Msc_Obj_Det/"
     # desktop = "C:/Users/Moji podatki/Desktop/github/Msc_Obj_Det/"
@@ -589,7 +575,7 @@ if __name__ == "__main__":
     you_want_to_do_this = False
     if you_want_to_do_this:
         for index,something in vott_csv.iterrows():
-            real_name = something["image"]#unquote(something["image"])
+            real_name = something["image"]
             if not something["label"] == "confirmed_body": continue
             path = output_folder+real_name
             im = Image.open(path)
@@ -597,7 +583,7 @@ if __name__ == "__main__":
             print(unquote(something["image"]))
             print("{},{}".format(something["xmin"],something["ymin"]))
             im.show()
-            #bla_bla = input("Press enter to continue")
+            wait_txt = input("Press enter to continue")
 
     plt.rcParams['figure.figsize'] = [12, 8]
     plt.rcParams['figure.dpi'] = 100
@@ -696,25 +682,26 @@ if __name__ == "__main__":
     test = output_folder + "test"
     dev = output_folder + "dev"
 
-    train_dataset = SonarDataset(train,csv_file,sonar_transform,type="oversampled") # random oversampled real data set
-    #train_dataset = SonarDataset(train_synth1, csv_file, sonar_transform)  # synth base set
-    dev_dataset = SonarDataset(dev,csv_file,sonar_eval_transform)
-    test_dataset = SonarDataset(test,csv_file,sonar_eval_transform)
+    classes_to_ignore = ["debris", "bike", "anomaly"]  # global_label2id and id2label index order also has to be updated after changing this
+    train_dataset = SonarDataset(train,csv_file,sonar_transform,type="oversampled",ignored_list=classes_to_ignore) # TODO remove oversampling (improve loss function) random oversampled real data set
+    #train_dataset = SonarDataset(train_synth1, csv_file, sonar_transform,ignored_list=classes_to_ignore)  # synth base set
+    dev_dataset = SonarDataset(dev,csv_file,sonar_eval_transform,ignored_list=classes_to_ignore)
+    test_dataset = SonarDataset(test,csv_file,sonar_eval_transform,ignored_list=classes_to_ignore)
 
     pretrain_coco = False # mutually exclusive
     pretrain_imagenet = False # mutually exclusive
     weight_decay_val = 0 # 0 for real data
     bb_train_val = 5
-    num_classes = 4  # bike + anomaly + confirmed_victim + background (debris is not used anymore)
-    lr_val = 0.00001 # 0.0001 for real data
+    num_classes = 5 - len(classes_to_ignore)  # bike + anomaly + confirmed_victim + debris + background
+    lr_val = 0.0001 # 0.0001 for real data
 
     train_mode = True # either train or eval
-    train_score_treshold = 0.0 # this is useful because its a proxy for the tradeoff between precision and recall (0.5 is a good value)
+    train_score_treshold = 0.1 # this is useful because its a proxy for the tradeoff between precision and recall (0.5 is a good value)
     vizualize_image_predictions_eval = False
 
 
     # top options: resnet50 or resnet18
-    # bb_train_val 4 or use model from scratch
+    # bb_train_val 4 or use model from scratch ( scratch slightly better than pretrained but it is not significant)
 
     #print("Sum annotated bodies:{}, anomalies:{}, debris:{}, bikes:{}".format(c_cnf_body, c_anomaly, c_debris, c_bikes))
     print("Original shape:{}, new transformed shape:{}".format(train_dataset.get_image(21).shape,train_dataset[21][0].shape))
@@ -752,11 +739,11 @@ if __name__ == "__main__":
         pretrained_backbone=pretrain_imagenet,
         trainable_backbone_layers=bb_train_val, # 5 is all (none are frozen)
         rpn_anchor_generator=rpn_sonar_anchor_gen, # cannot be pretrained on coco with this anchor generator
-        rpn_pre_nms_top_n_train=8000, rpn_pre_nms_top_n_test=8000, # 8000 got good results on test
-        rpn_post_nms_top_n_train=4000, rpn_post_nms_top_n_test=4000, # 4000 got good results on test
+        rpn_pre_nms_top_n_train=8000, rpn_pre_nms_top_n_test=4000, # 8000 got good results on test
+        rpn_post_nms_top_n_train=4000, rpn_post_nms_top_n_test=2000, # 4000 got good results on test
         image_mean=[0.199, 0.199, 0.199], image_std=[0.058, 0.058, 0.058], # sonar train set values
     )
-    '''
+
     '''
         rpn_pre_nms_top_n_train (int): number of proposals to keep before applying NMS during training
         rpn_pre_nms_top_n_test (int): number of proposals to keep before applying NMS during testing
@@ -799,6 +786,16 @@ if __name__ == "__main__":
     in_features = model.roi_heads.box_predictor.cls_score.in_features
     # replace the pre-trained head with a new one
     model.roi_heads.box_predictor = FastRCNNPredictor(in_features, num_classes)
+
+    #model.roi_heads.fastrcnn_loss = my_new_loss # change loss (!!!! see below)
+    '''
+    Like many things, again the loss function is not configurable by accessing the pytorch model class, as it is hardcoded in the loss function (fastrcnn_loss in roi_heads.py)
+    In order to change it, you need to open roi_heads.py, add 
+    - from torchvision.ops import sigmoid_focal_loss 
+    then comment out line 36, and add this line below 
+    - classification_loss = sigmoid_focal_loss(class_logits, labels)
+    '''
+
     model.to(device)
     torch.cuda.empty_cache()
 
@@ -810,7 +807,7 @@ if __name__ == "__main__":
     optimizer = torch.optim.Adam(params, lr=lr_val, weight_decay=weight_decay_val)  # Trying ADAM here
 
     lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, # reduced step size, not using rn
-                                                   step_size=25,
+                                                   step_size=15,
                                                    gamma=0.5)
 
     # max batch is 6 with resnet50 | 10 resnet18 (usually train is 2x dev or test)
@@ -825,7 +822,7 @@ if __name__ == "__main__":
     val_loss_list = []
     precision_list = []
     recall_list = []
-    accuracy_list = []
+    f1_list = []
     best_recall = 0
     best_precision = 0
 
@@ -837,34 +834,31 @@ if __name__ == "__main__":
 
     if train_mode:
         for epoch in range(num_epochs):
-            logger, train_stats = train_one_epoch(model, optimizer, train_dataloader, device, epoch, print_every=250)
+            logger, train_stats = train_one_epoch(model, optimizer, train_dataloader, device, epoch)
             train_loss = train_stats["loss"]
 
             # update the learning rate
             lr_scheduler.step()
             # evaluate on the test dataset
-            coco_eval_obj, eval_stats = evaluate(model, dev_dataloader, device=device,eval_visualize=False,score_threshold=train_score_treshold)
+            coco_eval_obj, eval_stats = evaluate(model, dev_dataloader, device=device,eval_visualize=False)
             val_loss = eval_stats["loss"]
 
             train_loss_list.append(train_loss)
             val_loss_list.append(val_loss)
             total = sum(eval_stats["pred_total"])
-            class_index = 3  # 3 is confirmed body, 1 is bike, 2 is anomaly
-            if eval_stats["TP"] != 0 and eval_stats["correct_total"][class_index] != 0:
-                accuracy = (eval_stats["TP"] + eval_stats["TN"]) / total
-                #precision = eval_stats["TP"] / (eval_stats["TP"] + eval_stats["FP"]) # macro all classes
-                #recall = eval_stats["TP"] / (eval_stats["TP"] + eval_stats["FN"]) # macro all classes
-                tp = eval_stats["correct_total"][class_index]
-                fp = eval_stats["pred_total"][class_index] - eval_stats["correct_total"][class_index]
-                fn = eval_stats["correct_max"][class_index] - eval_stats["correct_total"][class_index]
+            int_tresh = int(train_score_treshold * 10)
+            if eval_stats['confidences'][int_tresh]['TP'] != 0:
+                tp = eval_stats['confidences'][int_tresh]['TP']
+                fp = eval_stats['confidences'][int_tresh]['FP']
+                fn = eval_stats['confidences'][int_tresh]['FN']
                 precision = tp / (tp + fp)
                 recall = tp / (tp + fn)
-
+                f1_score = 2 * ((precision * recall) / (precision + recall))
             else:
-                accuracy = 0
                 precision = 0
                 recall = 0
-            accuracy_list.append(accuracy)
+                f1_score = 0
+            f1_list.append(f1_score)
             precision_list.append(precision)
             recall_list.append(recall)
             if (recall+min(precision,0.1)) > (best_recall+best_precision): # the score treshold is probably 0.5, so 0.15 is a reasonable max precision before recall gets compromised
@@ -876,14 +870,13 @@ if __name__ == "__main__":
             if epoch % 10 == 0:
                 torch.save(model, "F:/projekti/msc_sonar_models/saved_model_epoch{}.pt".format(epoch))
 
+            plot_x_y(f1_list, mode="f1_plot")
             plot_x_y(train_loss_list, val_loss_list, mode="loss_plot")
-            plot_x_y(accuracy_list, mode="accuracy_plot")
             print("Eval custom metrics:")
-            print("Total and correct labels to indexes {}".format(dev_dataset.label2id))
-            print(eval_stats['correct_total']) # TODO expand or shrink this based on relevancy
-            print(eval_stats['correct_max'])
+            print("Total and correct labels to indexes {}".format(global_label2id))
+            print(eval_stats) # TODO hide useless info
             print(eval_stats['confidences'])
-            print("class:{} precision:{} recall:{}".format(class_index,precision,recall))
+            print("(calculated above {} score) precision:{} recall:{} f1:{}".format(train_score_treshold,precision,recall,f1_score))
             print("{}# epoch done, Train loss: {}, Validation loss: {}".format(epoch+1,train_loss,val_loss))
             print("---------------------------------------------------------------------")
     else:
@@ -899,7 +892,7 @@ if __name__ == "__main__":
                     torch.cuda.empty_cache()
                     model = torch.load(model_name)
                     model.eval()
-                    coco_eval_obj, eval_stats = evaluate(model,test_dataloader,device=device,eval_visualize = vizualize_image_predictions_eval,score_threshold = 0)
+                    coco_eval_obj, eval_stats = evaluate(model,test_dataloader,device=device,eval_visualize = vizualize_image_predictions_eval)
 
                     precision_list = []
                     recall_list = []
@@ -919,7 +912,7 @@ if __name__ == "__main__":
                         precision_list.append(precision)
                         recall_list.append(recall)
                         f1_list.append(f1_score)
-                    print("labels to indexes {}".format(dev_dataset.label2id))
+                    print("labels to indexes {}".format(global_label2id))
                     print(eval_stats)
                     print("Max recall:{}".format(max(recall_list)))
                     print("Max precision:{}".format(max(precision_list)))
