@@ -4,6 +4,41 @@ import random
 import cv2
 import numpy as np
 import pandas as pd
+import math
+import torch
+
+'''
+Author: Žan Žagar (zanz2 on github)
+Authors readme with some cool lore: This work was done in the scope of my masters thesis AI internship at the Politie. The work took place over 7 months.
+Below are the relevant files and how i used them (you might find your own solutions or improve the ones present, or even scrap them)
+
+This was enough time to answer the research questions posed, but not to deliver a polished solution.
+The main tasks were:
+- Given raw sonar data .jsf files, create a solution that is able to parse these files into postprocessed images, that correct
+    the sonar noise that is present and occurs due to the nature of sonar imaging. Account for the changing resolutions, of the scans,
+    equalize the "bright" areas at the left area of the sonar scan and "dark" areas at the rightmost areas.
+    !!!File that does this: parse_and_preprocess_jsf.ipynb
+    From sonar .jsf files normalized, padded and stitched 1000x1000 images are created, these were then annotated for bounding box object detection in VOTT
+- The created dataset was then trained using pytorch, you should really scrap this file alltogether and probably use tensorflow,
+    I have found the object detection tools in pytorch VERY lacking, and the documentation very lacking too, there are object detection evaluation libraries missing,
+    so you have to use ones that work for linux and port them to windows.
+    I had to write my own evaluation script just to find out how many TP FP and FNs the object was making because the ported library had no documentation and was
+    not being maintained, (pycocotools),
+    !!!File that does this: file train_model.py
+- Next followed a lot of 3D modelling work, to create a scene to emulate the sonar environment in blender, this was very time intense and probably 70% of the time spent in this project.
+    Using the python blender scripting engine, most aspects of the scene (such as sonar angle, body positions, limb variations etc) were randomly varied using a script i created
+    to allow for highly varied and extendable generation of realistic fake bodies.
+    !!!File that does this: blender_generate_renders.py
+- Next followed a lot of postprocessing, to superimpose these varied fake bodies onto existing backgrounds, this was done using intense image manipulation,
+    bitwise masking to allow me to seperate the background, the body and the shadow, then apllying different noise profiles to each, different transparency values to each,
+    pixelation to each.
+    !!! File that does this: renders_synthetic_data_processing.py
+
+- Final notes: Each of these files can be improved significantly(except train_model.py, id scrap it and use tensorflow). Due to me wanting to round up
+    my studies and find a job this was not possible in the given time frame, but most of the files have comments marked to-do (without the hyphen) with some
+    of my ideas, you will probably come up with your own improvements. Out of these 4 files the blender renders file and the synthetic data processing could have
+    been greatly extended if i was not pressed for time and money, i believe given enough time they could generate samples that are indistinguishable from the real data.
+'''
 
 class GlobalBackgrounds():
     def __init__(self):
@@ -17,13 +52,14 @@ class GlobalBackgrounds():
 
 def anchor_box_analyze(anchor_box_file_path):
     csv_boxes = pd.read_csv(anchor_box_file_path)
-    ratios = {0.15: 0,0.24: 0,0.33: 0,0.5: 0,0.66: 0,1: 0,1.5: 0,2: 0}
+    ratios = {0.06: 0,0.24: 0,0.34: 0,0.55: 0,0.78:0,1: 0,1.5:0,2.2: 0}
     # anchor_sizes = ((25,), (75,), (150,), (300,),(400,))
-    sizes = {20: 0,40: 0,60: 0,90: 0,280: 0}
+    sizes = {20: 0,42: 0,62: 0,100: 0,280: 0}
     used,used_s,total = 0,0,0
     search_string = ""
     max_width,max_height,avg_width,avg_height = 0,0,0,0
     min_width,min_height = 1000,1000
+    ratios_list = []
     for index, asset in csv_boxes.iterrows():
         if asset["label"] == "confirmed_body":
             search_string = "{}\n{}".format(search_string,asset["image"])
@@ -31,6 +67,11 @@ def anchor_box_analyze(anchor_box_file_path):
             height = asset["ymax"] - asset["ymin"]
             ratio = height/width
             total += 1
+
+            ratio = round(ratio, 2)
+            width = round(width, 2)
+            height = round(height, 2)
+            ratios_list.append(ratio)
 
             if height > max_height: max_height = height
             if height < min_height: min_height = height
@@ -55,16 +96,16 @@ def anchor_box_analyze(anchor_box_file_path):
                     sizes[key] += 1
                     used_s += 1
                     break
-    avg_width = avg_width/total
-    avg_height = avg_height/total
+    avg_width = round(avg_width/total,2)
+    avg_height = round(avg_height/total,2)
     print(ratios)
-    print(used)
-    print(total)
     print(sizes)
     used_s = used_s/2
-    print(used_s)
+
+    print("Samples that are in ratios range {}/{}, samples that are in sizes range {}/{}".format(used,total,used_s,total))
     print("widths min:{} max:{} avg:{}".format(min_width,max_width,avg_width))
     print("heights min:{} max:{} avg:{}".format(min_height,max_height,avg_height))
+    print("All ratios: {}".format(sorted(ratios_list)))
     #print(search_string)
 
 def remove_images_from_folder(image_folder,remove_list_file):
@@ -114,7 +155,7 @@ def bb_one_time_fix(bbox_file,outputs_folder):
             csv_writer.writerow([filename, xmin, ymin, xmax, ymax, label])
     print("Bounding box csv file fixing finished")
 
-def noisy(image,mask,type): # TODO WIP seperate random noise profiles depending on certain body factors (hire me, im unemployed!)
+def noisy(image,mask,type): # TODO WIP seperate random noise profiles depending on certain body factors
     output = image.copy()
     dist_size = 300
     if type == "shadow":
@@ -137,7 +178,7 @@ def noisy(image,mask,type): # TODO WIP seperate random noise profiles depending 
 
     return output
 
-def apply_blur(image_name): # TODO WIP apply blur, if you're reading this it means that i wasnt hired fulltime, and the project fell on your hands
+def apply_blur(image_name): # TODO WIP apply blur
     pass
 
 def apply_pixelation(image_name, downsample_size): # downsample size = (w,h), it takes in grayscale images
@@ -394,5 +435,12 @@ def calculate_norm_and_std(image_folder_path):
     print("Images mean: {}".format(np.mean(matrix_mean))) # for 500 its 0.2253309, for full train set its: 0.19964
     print("Images std: {}".format(np.std(matrix_mean)))   # for 500 its 0.1186108, for full train set its: 0.0582186
 
-#visualize_bboxfile("D:/generated_transparent_bg/outputs_first/bounding_boxes.csv","D:/generated_transparent_bg/outputs_first/all/")
-#calculate_norm_and_std("D:/generated_transparent_bg/bg_train_synthetic/")
+def logit2prob(logit):
+    odds = math.exp(logit)
+    prob = odds / (1 + odds)
+    return prob
+
+
+anchor_box_analyze("C:/Users/zanza/Desktop/MSC_work/Msc_Obj_Det/data/vott/run3_big/output/vott-csv-export/06_02_2022_BIG-export_before_synth_added.csv")
+#print(logit2prob(-37.4874))
+#print(torch.sigmoid(torch.tensor(-37.4874,dtype=torch.float)))
