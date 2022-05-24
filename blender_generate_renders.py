@@ -1,18 +1,51 @@
 import bpy
 import os
-import numpy as np
+import numpy as np # not needed, just run the files seperately (renders_synthetic_data_processing and blender_generate_renders), one inside blender, one inside your flavour of python interpreted
 import math
 import mathutils
-import cv2
+import cv2 # not needed, see above
 import subprocess
 import sys
 import random
 
 
 sys.path.append( 'C:/Users/zanza/Desktop/MSC_work/Msc_Obj_Det/' )
-import renders_synthetic_data_processing as rsdp
+import renders_synthetic_data_processing as rsdp # not needed, see above
 
-def set_pose(pose_index):
+'''
+Author: Žan Žagar (zanz2 on github)
+Authors readme with some cool lore: This work was done in the scope of my masters thesis AI internship at the Politie. The work took place over 7 months.
+Below are the relevant files and how i used them (you might find your own solutions or improve the ones present, or even scrap them)
+
+This was enough time to answer the research questions posed, but not to deliver a polished solution.
+The main tasks were:
+- Given raw sonar data .jsf files, create a solution that is able to parse these files into postprocessed images, that correct
+    the sonar noise that is present and occurs due to the nature of sonar imaging. Account for the changing resolutions, of the scans,
+    equalize the "bright" areas at the left area of the sonar scan and "dark" areas at the rightmost areas.
+    !!!File that does this: parse_and_preprocess_jsf.ipynb
+    From sonar .jsf files normalized, padded and stitched 1000x1000 images are created, these were then annotated for bounding box object detection in VOTT
+- The created dataset was then trained using pytorch, you should really scrap this file alltogether and probably use tensorflow,
+    I have found the object detection tools in pytorch VERY lacking, and the documentation very lacking too, there are object detection evaluation libraries missing,
+    so you have to use ones that work for linux and port them to windows.
+    I had to write my own evaluation script just to find out how many TP FP and FNs the object was making because the ported library had no documentation and was
+    not being maintained, (pycocotools),
+    !!!File that does this: file train_model.py
+- Next followed a lot of 3D modelling work, to create a scene to emulate the sonar environment in blender, this was very time intense and probably 70% of the time spent in this project.
+    Using the python blender scripting engine, most aspects of the scene (such as sonar angle, body positions, limb variations etc) were randomly varied using a script i created
+    to allow for highly varied and extendable generation of realistic fake bodies.
+    !!!File that does this: blender_generate_renders.py
+- Next followed a lot of postprocessing, to superimpose these varied fake bodies onto existing backgrounds, this was done using intense image manipulation,
+    bitwise masking to allow me to seperate the background, the body and the shadow, then apllying different noise profiles to each, different transparency values to each,
+    pixelation to each.
+    !!! File that does this: renders_synthetic_data_processing.py
+
+- Final notes: Each of these files can be improved significantly(except train_model.py, id scrap it and use tensorflow). Due to me wanting to round up
+    my studies and find a job this was not possible in the given time frame, but most of the files have comments marked to-do (without the hyphen) with some
+    of my ideas, you will probably come up with your own improvements. Out of these 4 files the blender renders file and the synthetic data processing could have
+    been greatly extended if i was not pressed for time and money, i believe given enough time they could generate samples that are indistinguishable from the real data.
+'''
+
+def set_pose(pose_index): # TODO add many more poses, with reasonable variations
     deselect_all()
     bpy.data.objects['metarig'].select_set(True)
     bpy.ops.object.mode_set(mode='POSE')
@@ -431,6 +464,11 @@ bg_folder = 'C:/Users/zanza/Desktop/predictions/renders/generated/transparent_bg
 print("---------Running new version with bg object-----------")
 
 #generate_renders(save_folder,save_debug_folder,300)
+
+# IMPORTANT when anyone else that is not me is running this, the blender python interpreter wont have numpy and cv2, you DO NOT NEED to install it
+# 1. Run the above line in blender scripting to generate the renders ( first open the .blend file, open the scripting pane in the GUI, paste the code, run the script)
+# 2. After the rendering is done, run the functions below, but run them using the renders_synthetic_data_processing file
+
 
 # train random seed is 42, test is 1337, dev is 28
 # train has 2 neg per pos, dev 6 and test 9
