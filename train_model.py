@@ -685,7 +685,7 @@ if __name__ == "__main__":
     ], bbox_params=A.BboxParams(format='pascal_voc', label_fields=['class_labels']))
 
     synthetic_noise_profiles = ["base","2","3"]
-    current_noise_profile = [0] # See below for explanation of noise effects on synthetic body and shadow
+    current_noise_profile = 0 # See below for explanation of noise effects on synthetic body and shadow
     # base = salt and pepper noise -> alpha blending
     # 2 = pixelation -> salt and pepper noise -> alpha blending
     # 3 = only alpha blending
@@ -693,19 +693,23 @@ if __name__ == "__main__":
     # pixelation (resizing to a smaller size, resizing back to make body pixelated)
     # salt_and_pepper_noise (generated from sonar body and shadow pixel value distribution)
     # alpha_blending (blends the body and shadow to background each with their own alpha transparency value using a bitwise body and shadow mask obtained using tresholding)
-    train_synth = "F:/projekti/msc_sonar_models/synthetic_datasets/train_synth/outputs_{}_train/all".format(current_noise_profile)
-    test_synth = "F:/projekti/msc_sonar_models/synthetic_datasets/train_synth/outputs_{}_test/all".format(current_noise_profile)
-    dev_synth = "F:/projekti/msc_sonar_models/synthetic_datasets/train_synth/outputs_{}_dev/all".format(current_noise_profile)
+    train_synth = "F:/projekti/msc_sonar_models/synthetic_datasets/train_synth/outputs_{}_train/all".format(synthetic_noise_profiles[current_noise_profile])
+    test_synth = "F:/projekti/msc_sonar_models/synthetic_datasets/test_synth/outputs_{}_test/all".format(synthetic_noise_profiles[current_noise_profile])
+    dev_synth = "F:/projekti/msc_sonar_models/synthetic_datasets/dev_synth/outputs_{}_dev/all".format(synthetic_noise_profiles[current_noise_profile])
 
     train = output_folder + "train"
     test = output_folder + "test"
     dev = output_folder + "dev"
 
     classes_to_ignore = ["debris", "bike", "anomaly"]  # global_label2id and id2label index order also has to be updated after changing this
-    train_dataset = SonarDataset(train,csv_file,sonar_transform,type="oversampled",ignored_list=classes_to_ignore) # 3x oversampling with data augmentation
-    #train_dataset = SonarDataset(train_synth, csv_file, sonar_transform,ignored_list=classes_to_ignore)  # synth base set
-    dev_dataset = SonarDataset(dev,csv_file,sonar_eval_transform,ignored_list=classes_to_ignore)
+    #train_dataset = SonarDataset(train,csv_file,sonar_transform,type="oversampled",ignored_list=classes_to_ignore) # 3x oversampling with data augmentation
+    train_dataset = SonarDataset(train_synth, csv_file, sonar_transform,ignored_list=classes_to_ignore)
+
+    #dev_dataset = SonarDataset(dev,csv_file,sonar_eval_transform,ignored_list=classes_to_ignore)
+    dev_dataset = SonarDataset(dev_synth, csv_file, sonar_eval_transform, ignored_list=classes_to_ignore)
+
     test_dataset = SonarDataset(test,csv_file,sonar_eval_transform,ignored_list=classes_to_ignore)
+    #test_dataset = SonarDataset(test_synth, csv_file, sonar_eval_transform, ignored_list=classes_to_ignore)
 
     pretrain_coco = False # mutually exclusive
     pretrain_imagenet = False # mutually exclusive
