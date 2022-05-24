@@ -5,7 +5,6 @@
 # Lets try to read one of the JSF files. Interpret them using this spec:
 #   https://www.edgetech.com/wp-content/uploads/2019/07/0023492_Rev_E.pdf
 
-
 import os
 import statistics
 import sys
@@ -37,12 +36,48 @@ from torch.utils.data import DataLoader
 from torchvision.models.detection.backbone_utils import resnet_fpn_backbone
 from torchsummary import summary
 
-device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
-#device = "cpu"
-global_eval_current_model_path = ""
+'''
+Author: Žan Žagar (zanz2 on github)
+Authors readme with some cool lore: This work was done in the scope of my masters thesis AI internship at the Politie. The work took place over 7 months.
+Below are the relevant files and how i used them (you might find your own solutions or improve the ones present, or even scrap them)
+
+This was enough time to answer the research questions posed, but not to deliver a polished solution.
+The main tasks were:
+- Given raw sonar data .jsf files, create a solution that is able to parse these files into postprocessed images, that corrects
+    the sonar noise that is present and occurs due to the nature of sonar imaging. Account for the changing resolutions, of the scans,
+    equalize the "bright" areas at the left area of the sonar scan and "dark" areas at the rightmost areas.
+    !!!File that does this: parse_and_preprocess_jsf.ipynb
+    From sonar .jsf files normalized, padded and stitched 1000x1000 images are created, these were then annotated for bounding box object detection in VOTT
+- The created dataset was then trained using pytorch, you should really scrap this file alltogether and probably use tensorflow,
+    I have found the object detection evaluation tools in pytorch VERY lacking, and the documentation very lacking too, there are object detection evaluation libraries missing,
+    so you have to use ones that work for linux and port them to windows.
+    I had to write my own evaluation script just to find out how many TP FP and FNs the object was making because the ported library had no documentation and was
+    not being maintained, visualizing bounding boxes also wasnt there so i had to write this, and furthemore the library itself was based on a 
+     older version of numpy, so i had to fix some type casting erros to make it work, I then decided to just include the library in the git
+     so i wouldnt have to do this everytime i cloned the project (the library is pycocotools).
+    
+    TLDR: skip this file, use tensorflow, some findings: pretrained was never better for me than models from scratch even when freezing various number of backbone layers
+    I used oversampling and data augmentation to alleviate the class imbalance, use a custom anchor generator to generate more anchors at common sonar body aspect ratios,
+    use sonar image mean and std (all 3 img channels are the same in grayscale data), 
+    !!!File that does this: file train_model.py
+- Next followed a lot of 3D modelling work, to create a scene to emulate the sonar environment in blender, this was very time intense and probably 70% of the time spent in this project.
+    Using the python blender scripting engine, most aspects of the scene (such as sonar angle, body positions, limb variations etc) were randomly varied using a script i created
+    to allow for highly varied and extendable generation of realistic fake bodies.
+    !!!File that does this: blender_generate_renders.py
+- Next followed a lot of postprocessing, to superimpose these varied fake bodies onto existing backgrounds, this was done using intense image manipulation,
+    bitwise masking to allow me to seperate the background, the body and the shadow, then apllying different noise profiles to each, different transparency values to each,
+    pixelation to each.
+    !!! File that does this: renders_synthetic_data_processing.py
+
+- Final notes: Each of these files can be improved significantly(except train_model.py, id scrap it and use tensorflow). Due to me wanting to round up
+    my studies and find a job this was not possible in the given time frame, but most of the files have comments marked to-do (without the hyphen) with some
+    of my ideas, you will probably come up with your own improvements. Out of these 4 files the blender renders file and the synthetic data processing could have
+    been greatly extended if i was not pressed for time and money, i believe given enough time they could generate samples that are indistinguishable from the real data.
+'''
 
 def fasterrcnn_resnet18(num_classes=91, pretrained_backbone=True,trainable_bb_layers=None, **kwargs):
     print("using resnet18 (shallower)")
+    if trainable_bb_layers == None: trainable_bb_layers = 5
     backbone = torchvision.models.detection.backbone_utils.resnet_fpn_backbone('resnet18',pretrained=pretrained_backbone,trainable_layers=trainable_bb_layers)
     model = FasterRCNN(backbone, num_classes, **kwargs)
     return model
@@ -214,8 +249,7 @@ def get_class_stats(vott_csv):
     return coverage_dict
 
 
-def visualize_bbox(pic,bbox_list,gt_list=[],vis_pred_labels=[],gt_labels=[],vis_pred_scores=[],save=True,save_name=""):
-    if save and save_name=="": save_name = "image"
+def visualize_bbox(pic,bbox_list,gt_list,vis_pred_labels,gt_labels,vis_pred_scores,save_name):
     if len(bbox_list) == 0:
         return
     for index, gt in enumerate(gt_list):
@@ -227,16 +261,12 @@ def visualize_bbox(pic,bbox_list,gt_list=[],vis_pred_labels=[],gt_labels=[],vis_
         if len(vis_pred_labels) > 0: label_score_string += global_id2label[vis_pred_labels[index]]
         if len(vis_pred_scores) > 0: label_score_string += " "+str(vis_pred_scores[index])[0:4]
         pic = cv2.putText(pic,label_score_string, (int(bbox[0]) + 10, int(bbox[1]) + 10),cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 0, 255), 1, cv2.LINE_AA)
-    if save:
-        if len(gt_list) > 0:
-            save_name = "{}_GT".format(save_name)
-        else:
-            save_name = "{}_FP".format(save_name)
-        cv2.imwrite("{}.jpg".format(save_name),pic,[int(cv2.IMWRITE_JPEG_QUALITY), 96])
+
+    if len(gt_list) > 0:
+        save_name = "{}_GT".format(save_name)
     else:
-        cv2.imshow("bboxes visualized", pic)
-        cv2.waitKey(0)
-        cv2.destroyAllWindows()
+        save_name = "{}_FP".format(save_name)
+    cv2.imwrite("{}.jpg".format(save_name),pic,[int(cv2.IMWRITE_JPEG_QUALITY), 96])
 
 def tensor_to_img(tensor_array):
     tensor_array = tensor_array.cpu().detach().numpy()
@@ -298,7 +328,7 @@ def custom_evaluate(res_dict,targets,current_dict,images=[],visualize=False,IOU_
 
         pred_scores = dict_for_img["scores"]
         if True: # apply nms or not (debug)
-            pred_boxes_mask = nms(boxes=dict_for_img["boxes"], scores=dict_for_img["scores"], iou_threshold=0.5) # TODO testing
+            pred_boxes_mask = nms(boxes=dict_for_img["boxes"], scores=dict_for_img["scores"], iou_threshold=0.4) # TODO testing
             pred_boxes = dict_for_img["boxes"][pred_boxes_mask].tolist()
             pred_labels = dict_for_img["labels"][pred_boxes_mask].tolist()
             pred_scores = pred_scores[pred_boxes_mask].tolist()
@@ -369,9 +399,9 @@ def custom_evaluate(res_dict,targets,current_dict,images=[],visualize=False,IOU_
 
             numpy_image = tensor_to_img(images[img_index])
             if global_eval_current_model_path != "":
-                visualize_bbox(numpy_image,vis_pred_boxes,gt_boxes,vis_pred_labels=vis_pred_labels,gt_labels=gt_labels,vis_pred_scores=vis_pred_scores,save_name="{}/predictions/img_id{}".format(global_eval_current_model_path,gt_target["image_id"].item()))
+                visualize_bbox(numpy_image,vis_pred_boxes,gt_boxes,vis_pred_labels,gt_labels,vis_pred_scores,"{}/predictions/img_id{}".format(global_eval_current_model_path,gt_target["image_id"].item()))
             else:
-                visualize_bbox(numpy_image,vis_pred_boxes,gt_boxes,vis_pred_labels=vis_pred_labels,gt_labels=gt_labels,vis_pred_scores=vis_pred_scores,save_name="F:/projekti/msc_sonar_models/visualizations/predictions/img_id{}".format(gt_target["image_id"].item()))
+                visualize_bbox(numpy_image,vis_pred_boxes,gt_boxes,vis_pred_labels,gt_labels,vis_pred_scores,"F:/projekti/msc_sonar_models/visualizations/predictions/img_id{}".format(gt_target["image_id"].item()))
 
     return current_dict
 
@@ -382,18 +412,7 @@ def train_one_epoch(model, optimizer, data_loader, device, epoch, scaler=None, p
     header = f"Epoch: [{epoch}]"
 
     cumulative_stats_dict = {}
-
-    lr_scheduler2 = None
-    if epoch == 0:
-        warmup_factor = 1.0 / 1000
-        warmup_iters = min(1000, len(data_loader) - 1)
-
-        #lr_scheduler2 = torch.optim.lr_scheduler.LinearLR(
-        #    optimizer, start_factor=warmup_factor, total_iters=warmup_iters
-        #)
-
-    img_counter = 0
-    avg_loss_value = 0
+    img_counter, avg_loss_value = 0, 0
     for images, targets in metric_logger.log_every(data_loader, print_every, header):
         images = list(image.to(device) for image in images)
         targets = [{k: v.to(device) for k, v in t.items()} for t in targets]  # v.to(device)
@@ -421,9 +440,6 @@ def train_one_epoch(model, optimizer, data_loader, device, epoch, scaler=None, p
         else:
             losses.backward()
             optimizer.step()
-
-        if lr_scheduler2 is not None:
-            lr_scheduler2.step()
 
         img_counter += 1
         metric_logger.update(loss=losses_reduced, **loss_dict_reduced)
@@ -528,9 +544,9 @@ def evaluate(model, data_loader, device, eval_visualize=False):
         evaluator_time = time.time() - evaluator_time
         metric_logger.update(model_time=model_time, evaluator_time=evaluator_time)
 
-    eval_loss = get_loss(data_loader,model,device)
-    eval_loss = eval_loss / len(data_loader)
-    #eval_loss = 0.01
+    #eval_loss = get_loss(data_loader,model,device)
+    #eval_loss = eval_loss / len(data_loader)
+    eval_loss = 0.01 # no slowdowns and unnecessary .train() .eval() switching, the metric is not that useful in this case, you can plot the AP improving
     cumulative_stats_dict["loss"] = eval_loss
 
     # gather the stats from all processes
@@ -544,36 +560,27 @@ def evaluate(model, data_loader, device, eval_visualize=False):
 
     coco_evaluator.accumulate()
     coco_evaluator.summarize()
-    #coco_evaluator.coco_eval["bbox"].analyze()
 
     torch.set_num_threads(n_threads)
     return coco_evaluator, cumulative_stats_dict
 
-
+device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
+#device = "cpu"
+global_eval_current_model_path = ""
 global_label2id = { "confirmed_body": 1, "bike": 2, "anomaly": 3, "debris": 4}
 global_id2label = {1: "confirmed_body",2: "bike", 3: "anomaly", 4: "debris"}
 if __name__ == "__main__":
     # laptop = "C:/Users/zanza/Desktop/MSC_work/Msc_Obj_Det/"
     # desktop = "C:/Users/Moji podatki/Desktop/github/Msc_Obj_Det/"
     prefix = "C:/Users/Moji podatki/Desktop/github/Msc_Obj_Det/"
-    target = "conversions/vott_to_vgg_proj/empty_vgg_json.json"
-    source = "conversions/vott_to_vgg_proj/source_vott_csv.csv"
-    target_folder = prefix+"data/vott/run3_big/input"
-
     output_folder = prefix + "data/vott/run3_big/output/vott-csv-export/"
     csv_file = output_folder + "06_02_2022_BIG-export_added_synth.csv"
-    train = output_folder + "train"
-    test = output_folder + "test"
-    dev = output_folder + "dev"
-    train_synth1 = "F:/projekti/msc_sonar_models/synthetic_datasets/train_synth/outputs_first/all"
-
 
     info_dict = get_class_stats(csv_file)
-    # go over all the confirmed bodies
     vott_csv = pd.read_csv(csv_file)
 
     you_want_to_do_this = False
-    if you_want_to_do_this:
+    if you_want_to_do_this: # go over all the confirmed bodies
         for index,something in vott_csv.iterrows():
             real_name = something["image"]
             if not something["label"] == "confirmed_body": continue
@@ -677,54 +684,66 @@ if __name__ == "__main__":
         #A.Equalize(p=1),
     ], bbox_params=A.BboxParams(format='pascal_voc', label_fields=['class_labels']))
 
-    output_folder = prefix+"data/vott/run3_big/output/vott-csv-export/"
+    synthetic_noise_profiles = ["base","2","3"]
+    current_noise_profile = [0] # See below for explanation of noise effects on synthetic body and shadow
+    # base = salt and pepper noise -> alpha blending
+    # 2 = pixelation -> salt and pepper noise -> alpha blending
+    # 3 = only alpha blending
+
+    # pixelation (resizing to a smaller size, resizing back to make body pixelated)
+    # salt_and_pepper_noise (generated from sonar body and shadow pixel value distribution)
+    # alpha_blending (blends the body and shadow to background each with their own alpha transparency value using a bitwise body and shadow mask obtained using tresholding)
+    train_synth = "F:/projekti/msc_sonar_models/synthetic_datasets/train_synth/outputs_{}_train/all".format(current_noise_profile)
+    test_synth = "F:/projekti/msc_sonar_models/synthetic_datasets/train_synth/outputs_{}_test/all".format(current_noise_profile)
+    dev_synth = "F:/projekti/msc_sonar_models/synthetic_datasets/train_synth/outputs_{}_dev/all".format(current_noise_profile)
+
     train = output_folder + "train"
     test = output_folder + "test"
     dev = output_folder + "dev"
 
     classes_to_ignore = ["debris", "bike", "anomaly"]  # global_label2id and id2label index order also has to be updated after changing this
-    train_dataset = SonarDataset(train,csv_file,sonar_transform,type="oversampled",ignored_list=classes_to_ignore) # TODO remove oversampling (improve loss function) random oversampled real data set
-    #train_dataset = SonarDataset(train_synth1, csv_file, sonar_transform,ignored_list=classes_to_ignore)  # synth base set
+    train_dataset = SonarDataset(train,csv_file,sonar_transform,type="oversampled",ignored_list=classes_to_ignore) # 3x oversampling with data augmentation
+    #train_dataset = SonarDataset(train_synth, csv_file, sonar_transform,ignored_list=classes_to_ignore)  # synth base set
     dev_dataset = SonarDataset(dev,csv_file,sonar_eval_transform,ignored_list=classes_to_ignore)
     test_dataset = SonarDataset(test,csv_file,sonar_eval_transform,ignored_list=classes_to_ignore)
 
     pretrain_coco = False # mutually exclusive
     pretrain_imagenet = False # mutually exclusive
-    weight_decay_val = 0 # 0 for real data
-    bb_train_val = 5
+    weight_decay_val = 0 # 0 used for real data
+    bb_train_val = 5 if pretrain_imagenet else None
     num_classes = 5 - len(classes_to_ignore)  # bike + anomaly + confirmed_victim + debris + background
-    lr_val = 0.0001 # 0.0001 for real data
+    lr_val = 0.0001 # 0.0001 used for real data
+    early_stopping_max_epochs_no_improvement = 5
 
     train_mode = True # either train or eval
-    train_score_treshold = 0.1 # this is useful because its a proxy for the tradeoff between precision and recall (0.5 is a good value)
+    train_score_treshold = 0.0 # you can choose to ignore predictions below a certain treshold when calculating best model eval metrics,
+    # but you shouldnt, rather you should set the nms in the custom evaluate function and use that to cull some FP's
     vizualize_image_predictions_eval = False
-
+    torch.backends.cudnn.benchmark = True
 
     # top options: resnet50 or resnet18
     # bb_train_val 4 or use model from scratch ( scratch slightly better than pretrained but it is not significant)
 
-    #print("Sum annotated bodies:{}, anomalies:{}, debris:{}, bikes:{}".format(c_cnf_body, c_anomaly, c_debris, c_bikes))
     print("Original shape:{}, new transformed shape:{}".format(train_dataset.get_image(21).shape,train_dataset[21][0].shape))
-    print("{} to {}".format(torch.min(train_dataset[21][0]),torch.max(train_dataset[21][0])))
-    print(train_dataset[21][0].is_cuda)
-    print(train_dataset[21][1])
-    #visualize_bboxfile(csv_file,train_synth1) # see bboxes
-    print(train_dataset[21][1]["boxes"].shape)
+    print("random sample image min normalized pixel val {} max val {}".format(torch.min(train_dataset[21][0]),torch.max(train_dataset[21][0])))
+    print("is that random sample image on cuda (False is normal)? {}".format(train_dataset[21][0].is_cuda))
+    print("Targets dict for that img: {}".format(train_dataset[21][1]))
+    #visualize_bboxfile(csv_file,train_synth) # see bboxes
+    print("Shape of bbox for that img: {}".format(train_dataset[21][1]["boxes"].shape))
     print("Number of images train:{}, dev:{}, test:{}".format(len(train_dataset),len(dev_dataset),len(test_dataset)))
-    print(device)
-    print(torch.version.cuda)
+    print("Ignored classes: {}".format(classes_to_ignore))
+    print("On device: {}, version: {}".format(device,torch.version.cuda))
     print("Pretrained on coco:{}, pretrained on imagenet:{}".format(pretrain_coco,pretrain_imagenet))
-    print("Weight decay:{}, trainable bb layers (5 is all):{}".format(weight_decay_val,bb_train_val))
+    print("Weight decay:{},LR:{}, trainable bb layers (5 is all, N/a when it isnt pretrained):{}".format(weight_decay_val,lr_val,bb_train_val))
 
-    torch.backends.cudnn.benchmark = True
-    #anchor_sizes = ((32,), (64,), (128,), (256,),(512,)) # original
-    anchor_sizes = ((20,), (40,), (60,), (90,), (280,)) # {20: 2, 40: 123, 60: 137, 90: 137, 280: 145}
-    # {0.15: 24, 0.24: 37, 0.33: 48, 0.5: 51, 0.66: 25, 1: 41, 1.5: 33, 2: 13}
-    aspect_ratios = ((0.15, 0.24, 0.33, 0.5, 0.66, 1.0, 1.5, 2),) * len(anchor_sizes) # height / width
+    # original sizes: ((32,), (64,), (128,), (256,), (512,))
+    anchor_sizes = ((20,), (42,), (62,), (100,), (280,))
+    # original aspects = 0.5,1,2
+    aspect_ratios = ((0.06, 0.24, 0.34, 0.55, 0.78, 1, 1.5, 2.2),) * len(anchor_sizes) # height / width
     rpn_sonar_anchor_gen = AnchorGenerator(
         anchor_sizes, aspect_ratios
     )
-
+    '''
     model = fasterrcnn_resnet18(
         pretrained_backbone=pretrain_imagenet,
         trainable_bb_layers=bb_train_val, # 5 is all (none are frozen)
@@ -744,92 +763,34 @@ if __name__ == "__main__":
         image_mean=[0.199, 0.199, 0.199], image_std=[0.058, 0.058, 0.058], # sonar train set values
     )
 
-    '''
-        rpn_pre_nms_top_n_train (int): number of proposals to keep before applying NMS during training
-        rpn_pre_nms_top_n_test (int): number of proposals to keep before applying NMS during testing
-        rpn_post_nms_top_n_train (int): number of proposals to keep after applying NMS during training
-        rpn_post_nms_top_n_test (int): number of proposals to keep after applying NMS during testing
-        rpn_nms_thresh (float): NMS threshold used for postprocessing the RPN proposals
-        rpn_fg_iou_thresh (float): minimum IoU between the anchor and the GT box so that they can be
-            considered as positive during training of the RPN.
-        rpn_bg_iou_thresh (float): maximum IoU between the anchor and the GT box so that they can be
-            considered as negative during training of the RPN.
-        rpn_batch_size_per_image (int): number of anchors that are sampled during training of the RPN
-            for computing the loss
-        rpn_positive_fraction (float): proportion of positive anchors in a mini-batch during training
-            of the RPN
-        rpn_score_thresh (float): during inference, only return proposals with a classification score
-        greater than rpn_score_thresh
-        
-        box_roi_pool (MultiScaleRoIAlign): the module which crops and resizes the feature maps in
-            the locations indicated by the bounding boxes
-        box_head (nn.Module): module that takes the cropped feature maps as input
-        box_predictor (nn.Module): module that takes the output of box_head and returns the
-            classification logits and box regression deltas.
-        box_score_thresh (float): during inference, only return proposals with a classification score
-            greater than box_score_thresh
-        box_nms_thresh (float): NMS threshold for the prediction head. Used during inference
-        box_detections_per_img (int): maximum number of detections per image, for all classes.
-        box_fg_iou_thresh (float): minimum IoU between the proposals and the GT box so that they can be
-            considered as positive during training of the classification head
-        box_bg_iou_thresh (float): maximum IoU between the proposals and the GT box so that they can be
-            considered as negative during training of the classification head
-        box_batch_size_per_image (int): number of proposals that are sampled during training of the
-            classification head
-        box_positive_fraction (float): proportion of positive proposals in a mini-batch during training
-            of the classification head
-        bbox_reg_weights (Tuple[float, float, float, float]): weights for the encoding/decoding of the
-            bounding boxes
-    '''
-    # only pretrained on coco 2017, if pretrained_backbone = True AND pretrained=False then it uses a backbone pretrained on imagenet
     # get number of input features for the classifier
     in_features = model.roi_heads.box_predictor.cls_score.in_features
     # replace the pre-trained head with a new one
     model.roi_heads.box_predictor = FastRCNNPredictor(in_features, num_classes)
 
-    #model.roi_heads.fastrcnn_loss = my_new_loss # change loss (!!!! see below)
-    '''
-    Like many things, again the loss function is not configurable by accessing the pytorch model class, as it is hardcoded in the loss function (fastrcnn_loss in roi_heads.py)
-    In order to change it, you need to open roi_heads.py, add 
-    - from torchvision.ops import sigmoid_focal_loss 
-    then comment out line 36, and add this line below 
-    - classification_loss = sigmoid_focal_loss(class_logits, labels)
-    '''
-
+    # TODO SIFT could maybe be a useful method for employ in something like this, it is a non learning algorithm for feature extraction
+    #  but i do not have time to try this out
     model.to(device)
     torch.cuda.empty_cache()
-
-    #model_name = "F:/projekti/msc_sonar_models/saved_model_epoch30.pt"
-    #model = torch.load(model_name))
 
     # construct an optimizer
     params = [p for p in model.parameters() if p.requires_grad]
     optimizer = torch.optim.Adam(params, lr=lr_val, weight_decay=weight_decay_val)  # Trying ADAM here
 
-    lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, # reduced step size, not using rn
-                                                   step_size=15,
-                                                   gamma=0.5)
+    lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer,step_size=15,gamma=0.5)
 
     # max batch is 6 with resnet50 | 10 resnet18 (usually train is 2x dev or test)
     train_dataloader = DataLoader(train_dataset, batch_size=4,collate_fn=obj_collate_fn,shuffle=True, num_workers=1, drop_last=True)
+
     dev_dataloader = DataLoader(dev_dataset, batch_size=4,collate_fn=obj_collate_fn,pin_memory=True, shuffle=True, num_workers=1, drop_last=True) # To make dev validation loss more stable with small sample sizes data augmentation can be used
     test_dataloader = DataLoader(test_dataset, batch_size=4,collate_fn=obj_collate_fn,pin_memory=True, shuffle=True, num_workers=1, drop_last=True)
 
-
     num_epochs = 1000
-    best_eval_loss = 1
-    train_loss_list = []
-    val_loss_list = []
-    precision_list = []
-    recall_list = []
-    f1_list = []
-    best_recall = 0
-    best_precision = 0
+    train_loss_list, val_loss_list, precision_list, recall_list, f1_list = [], [], [], [], []
+    best_recall, best_precision, best_f1, best_ap, stopping_counter = 0, 0, 0, 0, 0
 
     eval_test = [ # in each of these folders there should be atleast 1 model that ends with .pt, and a folder of the same name (without .pt)
-        "F:/projekti/msc_sonar_models/imagenet/",
-        "F:/projekti/msc_sonar_models/coco/",
-        "F:/projekti/msc_sonar_models/scratch/"
+        "F:/projekti/msc_sonar_models/train_folder/"
     ]
 
     if train_mode:
@@ -855,17 +816,22 @@ if __name__ == "__main__":
                 recall = tp / (tp + fn)
                 f1_score = 2 * ((precision * recall) / (precision + recall))
             else:
-                precision = 0
-                recall = 0
-                f1_score = 0
+                precision, recall, f1_score = 0, 0, 0
+
             f1_list.append(f1_score)
             precision_list.append(precision)
             recall_list.append(recall)
-            if (recall+min(precision,0.1)) > (best_recall+best_precision): # the score treshold is probably 0.5, so 0.15 is a reasonable max precision before recall gets compromised
+
+            ap = coco_eval_obj.coco_eval["bbox"].stats[1] # (since its a 2 class problem) Average Precision  (AP) @[ IoU=0.50 | area=   all | maxDets=100 ]
+
+            if ap > best_ap: #f1_score > best_f1: #(recall+min(precision,0.15)) > (best_recall+best_precision): # with a train score treshold of 0.5, 0.15 is a reasonable max precision before recall gets compromised
                 print("Improvement, saved model!")
                 torch.save(model, "saved_model.pt")
-                best_recall = recall
-                best_precision = min(precision,0.1)
+                best_ap = ap
+                #best_f1 = f1_score
+                stopping_counter = 0
+            else:
+                stopping_counter = stopping_counter + 1 # early stopping criteria : no improvement to AP in 5 epochs, break
 
             if epoch % 10 == 0:
                 torch.save(model, "F:/projekti/msc_sonar_models/saved_model_epoch{}.pt".format(epoch))
@@ -874,11 +840,12 @@ if __name__ == "__main__":
             plot_x_y(train_loss_list, val_loss_list, mode="loss_plot")
             print("Eval custom metrics:")
             print("Total and correct labels to indexes {}".format(global_label2id))
-            print(eval_stats) # TODO hide useless info
-            print(eval_stats['confidences'])
-            print("(calculated above {} score) precision:{} recall:{} f1:{}".format(train_score_treshold,precision,recall,f1_score))
+            print(eval_stats)
+            print("AP(@[IoU=0.50|area=all|maxDets=100):{}  precision:{} recall:{} f1:{}".format(ap,precision,recall,f1_score))
             print("{}# epoch done, Train loss: {}, Validation loss: {}".format(epoch+1,train_loss,val_loss))
             print("---------------------------------------------------------------------")
+            if stopping_counter == early_stopping_max_epochs_no_improvement: break
+
     else:
         for model_dir in eval_test:
             for file in os.listdir(model_dir):
@@ -893,7 +860,6 @@ if __name__ == "__main__":
                     model = torch.load(model_name)
                     model.eval()
                     coco_eval_obj, eval_stats = evaluate(model,test_dataloader,device=device,eval_visualize = vizualize_image_predictions_eval)
-
                     precision_list = []
                     recall_list = []
                     f1_list = []
@@ -906,9 +872,7 @@ if __name__ == "__main__":
                             recall = tp / (tp + fn)
                             f1_score = 2 * ((precision * recall) / (precision + recall))
                         else:
-                            precision = 0
-                            recall = 0
-                            f1_score = 0
+                            precision, recall, f1_score = 0, 0, 0
                         precision_list.append(precision)
                         recall_list.append(recall)
                         f1_list.append(f1_score)
