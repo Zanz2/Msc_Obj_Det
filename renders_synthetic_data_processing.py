@@ -50,7 +50,7 @@ class GlobalBackgrounds():
     def get_background(self):
         return self.applicable_backgrounds[random.randint(0,len(self.applicable_backgrounds)-1)]
 
-def anchor_box_analyze(anchor_box_file_path):
+def anchor_box_analyze(anchor_box_file_path,print_positives_list = False):
     csv_boxes = pd.read_csv(anchor_box_file_path)
     ratios = {0.06: 0,0.24: 0,0.34: 0,0.55: 0,0.78:0,1: 0,1.5:0,2.2: 0}
     # anchor_sizes = ((25,), (75,), (150,), (300,),(400,))
@@ -106,9 +106,9 @@ def anchor_box_analyze(anchor_box_file_path):
     print("widths min:{} max:{} avg:{}".format(min_width,max_width,avg_width))
     print("heights min:{} max:{} avg:{}".format(min_height,max_height,avg_height))
     print("All ratios: {}".format(sorted(ratios_list)))
-    #print(search_string)
+    if print_positives_list: print(search_string)
 
-def remove_images_from_folder(image_folder,remove_list_file):
+def remove_images_from_folder(image_folder,remove_list_file,dry_run=False):
     lines = []
     counter = 0
     prompt = input("Deleting images from folder {}, are you sure? y/n: ".format(image_folder))
@@ -119,7 +119,7 @@ def remove_images_from_folder(image_folder,remove_list_file):
     for image_file in os.listdir(image_folder):
         if image_file.endswith(".png") and image_file in lines:
             image_file_path = os.path.join(image_folder,image_file)
-            os.remove(image_file_path)
+            if not dry_run: os.remove(image_file_path)
             counter += 1
 
     print("{} out of {} deleted".format(counter,len(lines)))
