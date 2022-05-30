@@ -446,8 +446,8 @@ def logit2prob(logit):
 def prepare_ablation_folders():
     root_folder = 'F:/projekti/msc_sonar_models/synthetic_datasets/train_synth/outputs_base_train/'
 
-    synth_fol = root_folder+"all/"
-    synth_pos_filt_keyword = "_pix0_alpha1_spnoise1_bg.png"
+    synth_fol = root_folder+"all/" # base noise samples
+    synth_pos_filt_keyword = "_pix0_alpha1_spnoise1_bg.png" # base noise samples
 
     real_fol = 'C:/Users/Moji podatki/Desktop/github/Msc_Obj_Det/data/vott/run3_big/output/vott-csv-export/train/'
     real_pos_list = 'C:/Users/Moji podatki/Desktop/github/Msc_Obj_Det/data/vott/run3_big/output/vott-csv-export/imgs_containing_bodies_list.txt'

@@ -573,7 +573,11 @@ device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cp
 global_eval_current_model_path = ""
 global_label2id = { "confirmed_body": 1, "bike": 2, "anomaly": 3, "debris": 4}
 global_id2label = {1: "confirmed_body",2: "bike", 3: "anomaly", 4: "debris"}
-if __name__ == "__main__":
+def main(train_dataset_path="",train_dataset_name=""):
+    if train_dataset_name != "":
+        print("---------------------------------------------------------------------------------------------")
+        print("NOW TRAINING ON {}, PATH {}".format(train_dataset_name,train_dataset_path))
+        print("---------------------------------------------------------------------------------------------")
     # laptop = "C:/Users/zanza/Desktop/MSC_work/Msc_Obj_Det/"
     # desktop = "C:/Users/Moji podatki/Desktop/github/Msc_Obj_Det/"
     prefix = "C:/Users/Moji podatki/Desktop/github/Msc_Obj_Det/"
@@ -718,8 +722,12 @@ if __name__ == "__main__":
     dev = output_folder + "dev"
 
     classes_to_ignore = ["debris", "bike", "anomaly"]  # global_label2id and id2label index order also has to be updated after changing this
-    #train_dataset = SonarDataset(train,csv_file,sonar_transform,type="oversampled",ignored_list=classes_to_ignore) # 3x oversampling with data augmentation
-    train_dataset = SonarDataset(var313_real20synth80, csv_file, sonar_transform,ignored_list=classes_to_ignore) # change the first param here for different datasets
+    if train_dataset_path == "":
+        # train_dataset = SonarDataset(train,csv_file,sonar_transform,type="oversampled",ignored_list=classes_to_ignore) # 3x oversampling with data augmentation
+        train_dataset = SonarDataset(train_synth, csv_file, sonar_transform,ignored_list=classes_to_ignore) # change the first param here for different datasets
+    else:
+        print("Using loop train dataset_path {}".format(train_dataset_path))
+        train_dataset = SonarDataset(train_dataset_path, csv_file, sonar_transform,ignored_list=classes_to_ignore) # change the first param here for different datasets
 
     #dev_dataset = SonarDataset(dev,csv_file,sonar_eval_transform,ignored_list=classes_to_ignore)
     dev_dataset = SonarDataset(dev_synth, csv_file, sonar_eval_transform, ignored_list=classes_to_ignore)
@@ -801,10 +809,10 @@ if __name__ == "__main__":
     lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer,step_size=15,gamma=0.5)
 
     # max batch is 6 with resnet50 | 10 resnet18 (usually train is 2x dev or test)
-    train_dataloader = DataLoader(train_dataset, batch_size=4,collate_fn=obj_collate_fn,shuffle=True, num_workers=1, drop_last=True)
+    train_dataloader = DataLoader(train_dataset, batch_size=4,collate_fn=obj_collate_fn,shuffle=True, num_workers=0, drop_last=True)
 
-    dev_dataloader = DataLoader(dev_dataset, batch_size=4,collate_fn=obj_collate_fn,pin_memory=True, shuffle=True, num_workers=1, drop_last=True) # To make dev validation loss more stable with small sample sizes data augmentation can be used
-    test_dataloader = DataLoader(test_dataset, batch_size=4,collate_fn=obj_collate_fn,pin_memory=True, shuffle=True, num_workers=1, drop_last=True)
+    dev_dataloader = DataLoader(dev_dataset, batch_size=4,collate_fn=obj_collate_fn,pin_memory=True, shuffle=True, num_workers=0, drop_last=True) # To make dev validation loss more stable with small sample sizes data augmentation can be used
+    test_dataloader = DataLoader(test_dataset, batch_size=4,collate_fn=obj_collate_fn,pin_memory=True, shuffle=True, num_workers=0, drop_last=True)
 
     num_epochs = 1000
     train_loss_list, val_loss_list, precision_list, recall_list, f1_list = [], [], [], [], []
@@ -847,15 +855,12 @@ if __name__ == "__main__":
 
             if ap > best_ap: #f1_score > best_f1: #(recall+min(precision,0.15)) > (best_recall+best_precision): # with a train score treshold of 0.5, 0.15 is a reasonable max precision before recall gets compromised
                 print("Improvement, saved model!")
-                torch.save(model, "saved_model.pt")
+                torch.save(model, "F:/projekti/msc_sonar_models/saved_model_best_{}.pt".format(train_dataset_name))
                 best_ap = ap
                 #best_f1 = f1_score
                 stopping_counter = 0
             else:
                 stopping_counter = stopping_counter + 1 # early stopping criteria : no improvement to AP in 5 epochs, break
-
-            if epoch % 10 == 0:
-                torch.save(model, "F:/projekti/msc_sonar_models/saved_model_epoch{}.pt".format(epoch))
 
             plot_x_y(f1_list, mode="f1_plot")
             plot_x_y(train_loss_list, val_loss_list, mode="loss_plot")
@@ -907,3 +912,30 @@ if __name__ == "__main__":
     print("That's it!")
 
 
+root_folder = 'F:/projekti/msc_sonar_models/synthetic_datasets/train_synth/outputs_base_train/'
+var313_real20synth80 = root_folder + "20real80synth"
+var311_real50synth50 = root_folder + "50real50synth"
+var312_real80synth20 = root_folder + "80real20synth"
+var32_eight = root_folder + "8000"
+var33_four = root_folder + "4000"
+var34_two = root_folder + "2000"
+var35_one = root_folder + "1000"
+var36_limb_novar = root_folder + "limb_limbvarxnone"
+var38_pose5 = root_folder + "pose_pose5"
+var37_sonar_blunt = root_folder + "sonar_blunt"
+
+dataset_tuple_list = [
+    (var313_real20synth80,'var313_real20synth80'),
+    (var311_real50synth50,'var311_real50synth50'),
+    (var312_real80synth20,'var312_real80synth20'),
+    (var32_eight,'var32_eight'),
+    (var33_four,'var33_four'),
+    (var34_two,'var34_two'),
+    (var35_one,'var35_one'),
+    (var36_limb_novar,'var36_limb_novar'),
+    (var38_pose5,'var38_pose5'),
+    (var37_sonar_blunt,'var37_sonar_blunt')
+]
+
+for dataset_path,dataset_name in dataset_tuple_list: # makes everything very efficient but i cant use dataset loader workers
+    main(dataset_path,dataset_name)
