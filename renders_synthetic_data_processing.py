@@ -1,6 +1,8 @@
 import os
 import csv
 import random
+import shutil
+
 import cv2
 import numpy as np
 import pandas as pd
@@ -441,6 +443,105 @@ def logit2prob(logit):
     return prob
 
 
-anchor_box_analyze("C:/Users/zanza/Desktop/MSC_work/Msc_Obj_Det/data/vott/run3_big/output/vott-csv-export/06_02_2022_BIG-export_before_synth_added.csv")
+def prepare_ablation_folders():
+    root_folder = 'F:/projekti/msc_sonar_models/synthetic_datasets/train_synth/outputs_base_train/'
+
+    synth_fol = root_folder+"all/"
+    synth_pos_filt_keyword = "_pix0_alpha1_spnoise1_bg.png"
+
+    real_fol = 'C:/Users/Moji podatki/Desktop/github/Msc_Obj_Det/data/vott/run3_big/output/vott-csv-export/train/'
+    real_pos_list = 'C:/Users/Moji podatki/Desktop/github/Msc_Obj_Det/data/vott/run3_big/output/vott-csv-export/imgs_containing_bodies_list.txt'
+
+    real20synth80 = root_folder+"20real80synth/"
+    real50synth50 = root_folder+"50real50synth/"
+    real80synth20 = root_folder+"80real20synth/"
+    eight = root_folder+"8000/"
+    four = root_folder+"4000/"
+    two = root_folder+"2000/"
+    one = root_folder+"1000/"
+    limb_novar = root_folder+"limb_limbvarxnone/"
+    pose5 = root_folder+"pose_pose5/"
+    sonar_blunt = root_folder+"sonar_blunt/"
+
+    def ablation_data_ratio(synth_folder,synth_pos_keyword,real_folder,real_pos_list,ratio, output_folder):
+        synth_list = []
+        for synth_file in os.listdir(synth_folder):
+            if not synth_file.endswith(synth_pos_keyword): continue
+            image_file_path = os.path.join(synth_folder, synth_file)
+            synth_list.append(image_file_path)
+
+        real_list = []
+        a_file = open(real_pos_list)
+        file_contents = a_file.read()
+        real_pos_list = file_contents.splitlines()
+        for real_file in os.listdir(real_folder):
+            if real_file not in real_pos_list: continue
+            image_file_path = os.path.join(real_folder, real_file)
+            real_list.append(image_file_path)
+
+        real_n = int(len(real_list)*ratio)
+        synth_n = int(len(real_list)*(1-ratio))
+        total = len(real_list)
+
+        while real_n + synth_n < total:
+            if real_n < synth_n: real_n += 1
+            if synth_n < real_n: synth_n += 1
+
+        print("Real {} Synth {}, total {}".format(real_n,synth_n,total))
+        new_list = real_list[:real_n] + synth_list[:synth_n]
+        print(len(new_list))
+        for file_path in new_list:
+            file_name = os.path.basename(file_path)
+            destination = output_folder+file_name
+            shutil.copyfile(file_path, destination)
+
+    def ablation_data_size(synth_folder, size, output_folder):
+        synth_list = []
+        for synth_file in os.listdir(synth_folder):
+            image_file_path = os.path.join(synth_folder, synth_file)
+            synth_list.append(image_file_path)
+        random.shuffle(synth_list)
+        synth_list = synth_list[:size]
+        for file_path in synth_list:
+            file_name = os.path.basename(file_path)
+            destination = output_folder + file_name
+            shutil.copyfile(file_path, destination)
+
+    def ablation_data_filter(synth_folder, filename_include_keyword, output_folder):
+        synth_list = []
+        for synth_file in os.listdir(synth_folder):
+            if filename_include_keyword not in synth_file: continue
+            image_file_path = os.path.join(synth_folder, synth_file)
+            synth_list.append(image_file_path)
+        for file_path in synth_list:
+            file_name = os.path.basename(file_path)
+            destination = output_folder + file_name
+            shutil.copyfile(file_path, destination)
+
+    ablation_data_ratio(synth_fol, synth_pos_filt_keyword, real_fol, real_pos_list, 0.2, real20synth80)
+    ablation_data_ratio(synth_fol, synth_pos_filt_keyword, real_fol, real_pos_list, 0.5, real50synth50)
+    ablation_data_ratio(synth_fol, synth_pos_filt_keyword, real_fol, real_pos_list, 0.8, real80synth20)
+
+    ablation_data_size(synth_fol, 8000, eight)
+    ablation_data_size(synth_fol, 4000, four)
+    ablation_data_size(synth_fol, 2000, two)
+    ablation_data_size(synth_fol, 1000, one)
+
+    ablation_data_filter(synth_fol, "_limbvarxnone_", limb_novar)
+    ablation_data_filter(synth_fol, "_pose5_", pose5)
+    ablation_data_filter(synth_fol, "_blunt_", sonar_blunt)
+    # after this fill the folders up with negatives from real train
+
+
+#prepare_ablation_folders()
+#anchor_box_analyze("C:/Users/zanza/Desktop/MSC_work/Msc_Obj_Det/data/vott/run3_big/output/vott-csv-export/06_02_2022_BIG-export_before_synth_added.csv")
 #print(logit2prob(-37.4874))
 #print(torch.sigmoid(torch.tensor(-37.4874,dtype=torch.float)))
+
+# ['09-06-2020%20Velden_data_likely_containing_targets_port_training_image_1000x1000_203.png',
+# '09-06-2020%20Velden_data_likely_containing_targets_starboard_training_image_1000x1000_201.png',
+# '09-06-2020%20Velden_data_likely_containing_targets_starboard_training_image_1000x1000_73.png',
+# '29-06-2020%20winterswijk_data_likely_containing_targets_port_training_image_1000x1000_150.png',
+# 'maarseveen_data_likely_containing_targets_starboard_training_image_1000x1000_29.png',
+# 'maarseveen_data_likely_containing_targets_starboard_training_image_1000x1000_29.png']
+

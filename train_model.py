@@ -6,6 +6,7 @@
 #   https://www.edgetech.com/wp-content/uploads/2019/07/0023492_Rev_E.pdf
 
 import os
+import random
 import statistics
 import sys
 from urllib.parse import unquote
@@ -118,7 +119,7 @@ def round_down(x, a):
     return math.floor(x / a) * a
 
 class SonarDataset(torch.utils.data.Dataset):
-    def __init__(self, root, csv_file, transforms, type="normal",ignored_list=[]):
+    def __init__(self, root, csv_file, transforms, type="normal",preshuffle=False,first_n=0,ignored_list=[]):
         self.type = type
         self.root = root
         self.transforms = transforms
@@ -128,6 +129,9 @@ class SonarDataset(torch.utils.data.Dataset):
         # that has the information of all the images included and the ones that have bounding boxes
 
         self.imgs = [s for s in os.listdir(root) if s.endswith('.png')]
+
+        if preshuffle: random.shuffle(self.imgs)
+        if first_n != 0: self.imgs = self.imgs[0:first_n]
 
         #self.imgs = self.imgs[0:int(len(self.imgs)*0.1)] # MAKE IT FAST FOR DEBUGGING
 
@@ -697,13 +701,25 @@ if __name__ == "__main__":
     test_synth = "F:/projekti/msc_sonar_models/synthetic_datasets/test_synth/outputs_{}_test/all".format(synthetic_noise_profiles[current_noise_profile])
     dev_synth = "F:/projekti/msc_sonar_models/synthetic_datasets/dev_synth/outputs_{}_dev/all".format(synthetic_noise_profiles[current_noise_profile])
 
+    root_folder = 'F:/projekti/msc_sonar_models/synthetic_datasets/train_synth/outputs_base_train/'
+    var313_real20synth80 = root_folder + "20real80synth"
+    var311_real50synth50 = root_folder + "50real50synth"
+    var312_real80synth20 = root_folder + "80real20synth"
+    var32_eight = root_folder + "8000"
+    var33_four = root_folder + "4000"
+    var34_two = root_folder + "2000"
+    var35_one = root_folder + "1000"
+    var36_limb_novar = root_folder + "limb_limbvarxnone"
+    var38_pose5 = root_folder + "pose_pose5"
+    var37_sonar_blunt = root_folder + "sonar_blunt"
+
     train = output_folder + "train"
     test = output_folder + "test"
     dev = output_folder + "dev"
 
     classes_to_ignore = ["debris", "bike", "anomaly"]  # global_label2id and id2label index order also has to be updated after changing this
     #train_dataset = SonarDataset(train,csv_file,sonar_transform,type="oversampled",ignored_list=classes_to_ignore) # 3x oversampling with data augmentation
-    train_dataset = SonarDataset(train_synth, csv_file, sonar_transform,ignored_list=classes_to_ignore)
+    train_dataset = SonarDataset(var313_real20synth80, csv_file, sonar_transform,ignored_list=classes_to_ignore) # change the first param here for different datasets
 
     #dev_dataset = SonarDataset(dev,csv_file,sonar_eval_transform,ignored_list=classes_to_ignore)
     dev_dataset = SonarDataset(dev_synth, csv_file, sonar_eval_transform, ignored_list=classes_to_ignore)
@@ -739,6 +755,7 @@ if __name__ == "__main__":
     print("On device: {}, version: {}".format(device,torch.version.cuda))
     print("Pretrained on coco:{}, pretrained on imagenet:{}".format(pretrain_coco,pretrain_imagenet))
     print("Weight decay:{},LR:{}, trainable bb layers (5 is all, N/a when it isnt pretrained):{}".format(weight_decay_val,lr_val,bb_train_val))
+    print("Noise set: {}".format(synthetic_noise_profiles[current_noise_profile]))
 
     # original sizes: ((32,), (64,), (128,), (256,), (512,))
     anchor_sizes = ((20,), (42,), (62,), (100,), (280,))
