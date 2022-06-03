@@ -16,16 +16,22 @@ Below are the relevant files and how i used them (you might find your own soluti
 
 This was enough time to answer the research questions posed, but not to deliver a polished solution.
 The main tasks were:
-- Given raw sonar data .jsf files, create a solution that is able to parse these files into postprocessed images, that correct
+- Given raw sonar data .jsf files, create a solution that is able to parse these files into postprocessed images, that corrects
     the sonar noise that is present and occurs due to the nature of sonar imaging. Account for the changing resolutions, of the scans,
     equalize the "bright" areas at the left area of the sonar scan and "dark" areas at the rightmost areas.
     !!!File that does this: parse_and_preprocess_jsf.ipynb
     From sonar .jsf files normalized, padded and stitched 1000x1000 images are created, these were then annotated for bounding box object detection in VOTT
 - The created dataset was then trained using pytorch, you should really scrap this file alltogether and probably use tensorflow,
-    I have found the object detection tools in pytorch VERY lacking, and the documentation very lacking too, there are object detection evaluation libraries missing,
+    I have found the object detection evaluation tools in pytorch VERY lacking, and the documentation very lacking too, there are object detection evaluation libraries missing,
     so you have to use ones that work for linux and port them to windows.
     I had to write my own evaluation script just to find out how many TP FP and FNs the object was making because the ported library had no documentation and was
-    not being maintained, (pycocotools),
+    not being maintained, visualizing bounding boxes also wasnt there so i had to write this, and furthemore the library itself was based on a 
+     older version of numpy, so i had to fix some type casting errors to make it work, I then decided to just include the library in the git
+     so i wouldnt have to do this everytime i cloned the project (the library is pycocotools).
+    
+    TLDR: skip this file, use tensorflow, some findings: pretrained was never better for me than models from scratch even when freezing various number of backbone layers
+    I used oversampling and data augmentation to alleviate the class imbalance, use a custom anchor generator to generate more anchors at common sonar body aspect ratios,
+    use sonar image mean and std (all 3 img channels are the same in grayscale data), 
     !!!File that does this: file train_model.py
 - Next followed a lot of 3D modelling work, to create a scene to emulate the sonar environment in blender, this was very time intense and probably 70% of the time spent in this project.
     Using the python blender scripting engine, most aspects of the scene (such as sonar angle, body positions, limb variations etc) were randomly varied using a script i created
@@ -223,7 +229,7 @@ def superimpose(input_background,input_foreground,visible_part_alpha=0.5):
     input_background[:, :, 3] = (1 - (1 - alpha_foreground) * (1 - alpha_background)) * 255
     return input_background
 
-def populate_backgrounds(backgrounds_folder, bg_number): #TODO debug
+def populate_backgrounds(backgrounds_folder, bg_number):
     bg_object = GlobalBackgrounds()
     applicable_backgrounds = bg_object.get_backgrounds()
     if len(applicable_backgrounds) == bg_number: return
@@ -445,16 +451,23 @@ def logit2prob(logit):
 
 def prepare_ablation_folders():
     root_folder = 'F:/projekti/msc_sonar_models/synthetic_datasets/train_synth/outputs_base_train/'
+    dev_root_folder = 'F:/projekti/msc_sonar_models/synthetic_datasets/dev_synth/outputs_base_dev/'
 
     synth_fol = root_folder+"all/" # base noise samples
+    synth_dev_fol = dev_root_folder+"all/"
     synth_pos_filt_keyword = "_pix0_alpha1_spnoise1_bg.png" # base noise samples
 
     real_fol = 'C:/Users/Moji podatki/Desktop/github/Msc_Obj_Det/data/vott/run3_big/output/vott-csv-export/train/'
+    real_dev_fol = 'C:/Users/Moji podatki/Desktop/github/Msc_Obj_Det/data/vott/run3_big/output/vott-csv-export/dev/'
     real_pos_list = 'C:/Users/Moji podatki/Desktop/github/Msc_Obj_Det/data/vott/run3_big/output/vott-csv-export/imgs_containing_bodies_list.txt'
 
     real20synth80 = root_folder+"20real80synth/"
     real50synth50 = root_folder+"50real50synth/"
     real80synth20 = root_folder+"80real20synth/"
+    extra_real50synth50 = root_folder+"extra_real50synth50/"
+    dev_real20synth80 = dev_root_folder+"20real80synth/"
+    dev_real50synth50 = dev_root_folder+"50real50synth/"
+    dev_real80synth20 = dev_root_folder+"80real20synth/"
     eight = root_folder+"8000/"
     four = root_folder+"4000/"
     two = root_folder+"2000/"
@@ -463,7 +476,7 @@ def prepare_ablation_folders():
     pose5 = root_folder+"pose_pose5/"
     sonar_blunt = root_folder+"sonar_blunt/"
 
-    def ablation_data_ratio(synth_folder,synth_pos_keyword,real_folder,real_pos_list,ratio, output_folder):
+    def ablation_data_ratio(synth_folder,synth_pos_keyword,real_folder,real_pos_list,ratio, output_folder, mode=""):
         synth_list = []
         for synth_file in os.listdir(synth_folder):
             if not synth_file.endswith(synth_pos_keyword): continue
@@ -479,9 +492,15 @@ def prepare_ablation_folders():
             image_file_path = os.path.join(real_folder, real_file)
             real_list.append(image_file_path)
 
+
         real_n = int(len(real_list)*ratio)
         synth_n = int(len(real_list)*(1-ratio))
         total = len(real_list)
+        random.shuffle(real_list)
+        random.shuffle(synth_list)
+        if mode == "extend":
+            real_n = int(len(real_list))
+            print("Notice: Extended dataset, not for ablation study")
 
         while real_n + synth_n < total:
             if real_n < synth_n: real_n += 1
@@ -518,22 +537,26 @@ def prepare_ablation_folders():
             destination = output_folder + file_name
             shutil.copyfile(file_path, destination)
 
-    ablation_data_ratio(synth_fol, synth_pos_filt_keyword, real_fol, real_pos_list, 0.2, real20synth80)
-    ablation_data_ratio(synth_fol, synth_pos_filt_keyword, real_fol, real_pos_list, 0.5, real50synth50)
-    ablation_data_ratio(synth_fol, synth_pos_filt_keyword, real_fol, real_pos_list, 0.8, real80synth20)
+    #ablation_data_ratio(synth_dev_fol, synth_pos_filt_keyword, real_dev_fol, real_pos_list, 0.2, dev_real20synth80)
+    #ablation_data_ratio(synth_dev_fol, synth_pos_filt_keyword, real_dev_fol, real_pos_list, 0.5, dev_real50synth50)
+    #ablation_data_ratio(synth_dev_fol, synth_pos_filt_keyword, real_dev_fol, real_pos_list, 0.8, dev_real80synth20)
+    #ablation_data_ratio(synth_fol, synth_pos_filt_keyword, real_fol, real_pos_list, 0.2, real20synth80)
+    #ablation_data_ratio(synth_fol, synth_pos_filt_keyword, real_fol, real_pos_list, 0.5, real50synth50)
+    #ablation_data_ratio(synth_fol, synth_pos_filt_keyword, real_fol, real_pos_list, 0.8, real80synth20)
+    #ablation_data_ratio(synth_fol, synth_pos_filt_keyword, real_fol, real_pos_list, 0, extra_real50synth50, mode="extend")
 
-    ablation_data_size(synth_fol, 8000, eight)
-    ablation_data_size(synth_fol, 4000, four)
-    ablation_data_size(synth_fol, 2000, two)
-    ablation_data_size(synth_fol, 1000, one)
+    #ablation_data_size(synth_fol, 8000, eight)
+    #ablation_data_size(synth_fol, 4000, four)
+    #ablation_data_size(synth_fol, 2000, two)
+    #ablation_data_size(synth_fol, 1000, one)
 
-    ablation_data_filter(synth_fol, "_limbvarxnone_", limb_novar)
-    ablation_data_filter(synth_fol, "_pose5_", pose5)
-    ablation_data_filter(synth_fol, "_blunt_", sonar_blunt)
+    #ablation_data_filter(synth_fol, "_limbvarxnone_", limb_novar)
+    #ablation_data_filter(synth_fol, "_pose5_", pose5)
+    #ablation_data_filter(synth_fol, "_blunt_", sonar_blunt)
     # after this fill the folders up with negatives from real train
 
 
-#prepare_ablation_folders()
+prepare_ablation_folders() # then fill the relevant folders with negativves
 #anchor_box_analyze("C:/Users/zanza/Desktop/MSC_work/Msc_Obj_Det/data/vott/run3_big/output/vott-csv-export/06_02_2022_BIG-export_before_synth_added.csv")
 #print(logit2prob(-37.4874))
 #print(torch.sigmoid(torch.tensor(-37.4874,dtype=torch.float)))

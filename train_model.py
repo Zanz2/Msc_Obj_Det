@@ -54,7 +54,7 @@ The main tasks were:
     so you have to use ones that work for linux and port them to windows.
     I had to write my own evaluation script just to find out how many TP FP and FNs the object was making because the ported library had no documentation and was
     not being maintained, visualizing bounding boxes also wasnt there so i had to write this, and furthemore the library itself was based on a 
-     older version of numpy, so i had to fix some type casting erros to make it work, I then decided to just include the library in the git
+     older version of numpy, so i had to fix some type casting errors to make it work, I then decided to just include the library in the git
      so i wouldnt have to do this everytime i cloned the project (the library is pycocotools).
     
     TLDR: skip this file, use tensorflow, some findings: pretrained was never better for me than models from scratch even when freezing various number of backbone layers
@@ -573,7 +573,7 @@ device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cp
 global_eval_current_model_path = ""
 global_label2id = { "confirmed_body": 1, "bike": 2, "anomaly": 3, "debris": 4}
 global_id2label = {1: "confirmed_body",2: "bike", 3: "anomaly", 4: "debris"}
-def main(train_dataset_path="",train_dataset_name=""):
+def main(train_dataset_path="",train_dataset_name="",dev_path=None):
     if train_dataset_name != "":
         print("---------------------------------------------------------------------------------------------")
         print("NOW TRAINING ON {}, PATH {}".format(train_dataset_name,train_dataset_path))
@@ -727,10 +727,13 @@ def main(train_dataset_path="",train_dataset_name=""):
         train_dataset = SonarDataset(train_synth, csv_file, sonar_transform,ignored_list=classes_to_ignore) # change the first param here for different datasets
     else:
         print("Using loop train dataset_path {}".format(train_dataset_path))
-        train_dataset = SonarDataset(train_dataset_path, csv_file, sonar_transform,ignored_list=classes_to_ignore) # change the first param here for different datasets
+        train_dataset = SonarDataset(train_dataset_path, csv_file, sonar_transform,type="oversampled",ignored_list=classes_to_ignore) # change the first param here for different datasets
 
     #dev_dataset = SonarDataset(dev,csv_file,sonar_eval_transform,ignored_list=classes_to_ignore)
-    dev_dataset = SonarDataset(dev_synth, csv_file, sonar_eval_transform, ignored_list=classes_to_ignore)
+    if dev_path is not None:
+        dev_dataset = SonarDataset(dev_path, csv_file, sonar_eval_transform, ignored_list=classes_to_ignore)
+    else:
+        dev_dataset = SonarDataset(dev, csv_file, sonar_eval_transform, ignored_list=classes_to_ignore)
 
     test_dataset = SonarDataset(test,csv_file,sonar_eval_transform,ignored_list=classes_to_ignore)
     #test_dataset = SonarDataset(test_synth, csv_file, sonar_eval_transform, ignored_list=classes_to_ignore)
@@ -913,9 +916,16 @@ def main(train_dataset_path="",train_dataset_name=""):
 
 
 root_folder = 'F:/projekti/msc_sonar_models/synthetic_datasets/train_synth/outputs_base_train/'
+dev_root = 'F:/projekti/msc_sonar_models/synthetic_datasets/dev_synth/outputs_base_dev/'
+
 var313_real20synth80 = root_folder + "20real80synth"
 var311_real50synth50 = root_folder + "50real50synth"
 var312_real80synth20 = root_folder + "80real20synth"
+dev_var313_real20synth80 = dev_root + "20real80synth"
+dev_var311_real50synth50 = dev_root + "50real50synth"
+dev_var312_real80synth20 = dev_root + "80real20synth"
+
+
 var32_eight = root_folder + "8000"
 var33_four = root_folder + "4000"
 var34_two = root_folder + "2000"
@@ -923,19 +933,27 @@ var35_one = root_folder + "1000"
 var36_limb_novar = root_folder + "limb_limbvarxnone"
 var38_pose5 = root_folder + "pose_pose5"
 var37_sonar_blunt = root_folder + "sonar_blunt"
+extra_real50synth50 = root_folder + "extra_real50synth50"
 
 dataset_tuple_list = [
-    (var313_real20synth80,'var313_real20synth80'),
-    (var311_real50synth50,'var311_real50synth50'),
-    (var312_real80synth20,'var312_real80synth20'),
-    (var32_eight,'var32_eight'),
-    (var33_four,'var33_four'),
-    (var34_two,'var34_two'),
-    (var35_one,'var35_one'),
-    (var36_limb_novar,'var36_limb_novar'),
-    (var38_pose5,'var38_pose5'),
-    (var37_sonar_blunt,'var37_sonar_blunt')
+    #(var32_eight,'var32_eight'),
+    #(var33_four,'var33_four'),
+    #(var34_two,'var34_two'),
+    #(var35_one,'var35_one'),
+    #(var36_limb_novar,'var36_limb_novar'),
+    #(var38_pose5,'var38_pose5'),
+    #(var37_sonar_blunt,'var37_sonar_blunt'),
+    (var313_real20synth80,'var313_real20synth80',dev_var313_real20synth80), # TODO loss is nan, do dev eval on same ratio (20 real 80 synth here for example, make the new sets)
+    (var311_real50synth50,'var311_real50synth50',dev_var311_real50synth50),
+    (var312_real80synth20,'var312_real80synth20',dev_var312_real80synth20),
+    (extra_real50synth50,'extra_real50synth50'),
 ]
 
-for dataset_path,dataset_name in dataset_tuple_list: # makes everything very efficient but i cant use dataset loader workers
-    main(dataset_path,dataset_name)
+for dt_tup in dataset_tuple_list: # makes everything very efficient but i cant use dataset loader workers
+    if len(dt_tup) == 3:
+        dev_path = dt_tup[2]
+    else:
+        dev_path = None
+    dataset_path = dt_tup[0]
+    dataset_name = dt_tup[1]
+    main(dataset_path,dataset_name,dev_path)

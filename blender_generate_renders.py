@@ -19,16 +19,22 @@ Below are the relevant files and how i used them (you might find your own soluti
 
 This was enough time to answer the research questions posed, but not to deliver a polished solution.
 The main tasks were:
-- Given raw sonar data .jsf files, create a solution that is able to parse these files into postprocessed images, that correct
+- Given raw sonar data .jsf files, create a solution that is able to parse these files into postprocessed images, that corrects
     the sonar noise that is present and occurs due to the nature of sonar imaging. Account for the changing resolutions, of the scans,
     equalize the "bright" areas at the left area of the sonar scan and "dark" areas at the rightmost areas.
     !!!File that does this: parse_and_preprocess_jsf.ipynb
     From sonar .jsf files normalized, padded and stitched 1000x1000 images are created, these were then annotated for bounding box object detection in VOTT
 - The created dataset was then trained using pytorch, you should really scrap this file alltogether and probably use tensorflow,
-    I have found the object detection tools in pytorch VERY lacking, and the documentation very lacking too, there are object detection evaluation libraries missing,
+    I have found the object detection evaluation tools in pytorch VERY lacking, and the documentation very lacking too, there are object detection evaluation libraries missing,
     so you have to use ones that work for linux and port them to windows.
     I had to write my own evaluation script just to find out how many TP FP and FNs the object was making because the ported library had no documentation and was
-    not being maintained, (pycocotools),
+    not being maintained, visualizing bounding boxes also wasnt there so i had to write this, and furthemore the library itself was based on a 
+     older version of numpy, so i had to fix some type casting errors to make it work, I then decided to just include the library in the git
+     so i wouldnt have to do this everytime i cloned the project (the library is pycocotools).
+    
+    TLDR: skip this file, use tensorflow, some findings: pretrained was never better for me than models from scratch even when freezing various number of backbone layers
+    I used oversampling and data augmentation to alleviate the class imbalance, use a custom anchor generator to generate more anchors at common sonar body aspect ratios,
+    use sonar image mean and std (all 3 img channels are the same in grayscale data), 
     !!!File that does this: file train_model.py
 - Next followed a lot of 3D modelling work, to create a scene to emulate the sonar environment in blender, this was very time intense and probably 70% of the time spent in this project.
     Using the python blender scripting engine, most aspects of the scene (such as sonar angle, body positions, limb variations etc) were randomly varied using a script i created
