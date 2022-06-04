@@ -142,7 +142,7 @@ class SonarDataset(torch.utils.data.Dataset):
         for index, asset in csv_boxes.iterrows():
             img_filename = asset["image"]
 
-            if img_filename not in self.imgs or asset["label"] in ignored_list: continue  # if the image isnt in this folder but in the json skip it
+            if img_filename not in self.imgs or asset["label"] in ignored_list: continue  # if the image isnt in this folder but in the json skip it or if its of an ignored class also skip it
             # this is so i can create a test train split
             if img_filename not in img_name_to_box:
                 img_name_to_box[img_filename] = []
@@ -229,29 +229,6 @@ class SonarDataset(torch.utils.data.Dataset):
 
     def __len__(self):
         return len(self.imgs)
-
-def get_class_stats(vott_csv):
-    vott_csv = pd.read_csv(vott_csv)
-    coverage_dict = dict()
-    for index,something in vott_csv.iterrows():
-        real_name = unquote(something["image"])
-        part = real_name.split("_data_likely_containing_targets_")
-        part = part[0]
-        if "_data_likely_containing_targets_" not in real_name:
-            part = real_name.split("_training_image_")
-            part = part[0]
-            part = part.split("_")[:-1]
-            part = "_".join(part)
-        if part not in coverage_dict:
-            coverage_dict[part] = {
-                "bike" : 0,
-                "debris" : 0,
-                "confirmed_body": 0,
-                "anomaly": 0
-            }
-        coverage_dict[part][something["label"]] += 1
-    return coverage_dict
-
 
 def visualize_bbox(pic,bbox_list,gt_list,vis_pred_labels,gt_labels,vis_pred_scores,save_name):
     if len(bbox_list) == 0:
@@ -573,6 +550,7 @@ device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cp
 global_eval_current_model_path = ""
 global_label2id = { "confirmed_body": 1, "bike": 2, "anomaly": 3, "debris": 4}
 global_id2label = {1: "confirmed_body",2: "bike", 3: "anomaly", 4: "debris"}
+
 def main(train_dataset_path="",train_dataset_name="",dev_path=None):
     if train_dataset_name != "":
         print("---------------------------------------------------------------------------------------------")
@@ -584,102 +562,7 @@ def main(train_dataset_path="",train_dataset_name="",dev_path=None):
     output_folder = prefix + "data/vott/run3_big/output/vott-csv-export/"
     csv_file = output_folder + "06_02_2022_BIG-export_added_synth.csv"
 
-    info_dict = get_class_stats(csv_file)
-    vott_csv = pd.read_csv(csv_file)
-
-    you_want_to_do_this = False
-    if you_want_to_do_this: # go over all the confirmed bodies
-        for index,something in vott_csv.iterrows():
-            real_name = something["image"]
-            if not something["label"] == "confirmed_body": continue
-            path = output_folder+real_name
-            im = Image.open(path)
-            # This method will show image in any image viewer
-            print(unquote(something["image"]))
-            print("{},{}".format(something["xmin"],something["ymin"]))
-            im.show()
-            wait_txt = input("Press enter to continue")
-
-    plt.rcParams['figure.figsize'] = [12, 8]
-    plt.rcParams['figure.dpi'] = 100
-    c_bikes = 0
-    c_debris = 0
-    c_cnf_body = 0
-    c_anomaly = 0
-
-    train_set = [ # TODO these dont include the newly added data (2nd batch with 4-5 runs)
-        '03-01-2020 Hoogezand, winschoterdiep',
-        '09-06-2020 Velden',
-        '16-08-20 Reuver',
-        '22-03-2020 weert_2',
-        '22-03-2020 weert',
-        '20-03-2020 weert_2',
-        '20-03-2020 weert',
-        '24-05-2020 Honselaarsplas',
-        '29-06-2020 winterswijk',
-        'maarseveen',
-        '09-07-2020 Giesbeek',
-        '30-06-2020 Giesbeek'
-    ]
-    test_set = [
-        '06-12-2020 Burdaard',
-        '09-11-2020 wemeldinge_2',
-        '09-11-2020 wemeldinge',
-        'brummen',
-        'Coverage_12-11-2020 Brummen'
-    ]
-    dev_set = [
-        '18-09-2020 stavoren',
-        '27-03-2020 sluis Belfeld',
-        '20-06-2020 Lemmer',
-        '28-07-2020 Maastricht',
-        '14-03-2020 breukelen'
-    ]
-
-    labels = ["train","test","dev"]
-    bikes = [0,0,0]
-    debris = [0,0,0]
-    confirmed_body = [0,0,0]
-    anomaly = [0,0,0]
-
-    for key, value in info_dict.items():
-        sample_index = 0 # training set
-        if key in test_set:
-            sample_index = 1
-        if key in dev_set:
-            sample_index = 2
-
-        bikes[sample_index] += value["bike"]
-        debris[sample_index] += value["debris"]
-        confirmed_body[sample_index] += value["confirmed_body"]
-        anomaly[sample_index] += value["anomaly"]
-
-        c_bikes += value["bike"]
-        c_debris += value["debris"]
-        c_cnf_body += value["confirmed_body"]
-        c_anomaly += value["anomaly"]
-
-    x = np.arange(len(labels))  # the label locations
-    width = 0.25  # the width of the bars
-
-    fig, ax = plt.subplots()
-    rects1 = ax.bar(x - width/2, bikes, width, label='Bikes')
-    rects2 = ax.bar(x + width/2, debris, width, label='Debris')
-    rects3 = ax.bar(x - width/4, confirmed_body, width, label='Confirmed bodies')
-    rects4 = ax.bar(x + width/4, anomaly, width, label='Anomalies')
-
-    # Add some text for labels, title and custom x-axis tick labels, etc.
-    ax.set_ylabel('Number of created annotations for a class')
-    ax.set_title('Grouping')
-    ax.set_xticks(x) # values
-    ax.set_xticklabels(labels) # labels
-    plt.xticks(rotation=90)
-    ax.legend()
-    fig.tight_layout()
-    #plt.show()
-    plt.savefig('DatasetDistributions.png', bbox_inches='tight')
-
-    sonar_transform = A.Compose([ # strecthing, different intensities probably safe
+    sonar_transform = A.Compose([ # different intensities probably safe
         A.RandomCrop(width=1000, height=400),
         A.VerticalFlip(p=0.5),
         A.RandomBrightnessContrast(p=0.35),
@@ -687,7 +570,7 @@ def main(train_dataset_path="",train_dataset_name="",dev_path=None):
         #A.Equalize(p=1),
     ], bbox_params=A.BboxParams(format='pascal_voc',label_fields=['class_labels']))
 
-    sonar_eval_transform = A.Compose([  # strecthing, different intensities probably safe
+    sonar_eval_transform = A.Compose([
         #A.RandomCrop(width=1000, height=350),
         #A.Equalize(p=1),
     ], bbox_params=A.BboxParams(format='pascal_voc', label_fields=['class_labels']))
@@ -723,7 +606,7 @@ def main(train_dataset_path="",train_dataset_name="",dev_path=None):
 
     classes_to_ignore = ["debris", "bike", "anomaly"]  # global_label2id and id2label index order also has to be updated after changing this
     if train_dataset_path == "":
-        # train_dataset = SonarDataset(train,csv_file,sonar_transform,type="oversampled",ignored_list=classes_to_ignore) # 3x oversampling with data augmentation
+        # train_dataset = SonarDataset(train,csv_file,sonar_transform,type="oversampled",ignored_list=classes_to_ignore) # 2x oversampling with data augmentation
         train_dataset = SonarDataset(train_synth, csv_file, sonar_transform,ignored_list=classes_to_ignore) # change the first param here for different datasets
     else:
         print("Using loop train dataset_path {}".format(train_dataset_path))
@@ -780,8 +663,8 @@ def main(train_dataset_path="",train_dataset_name="",dev_path=None):
         pretrained_backbone=pretrain_imagenet,
         trainable_bb_layers=bb_train_val, # 5 is all (none are frozen)
         rpn_anchor_generator=rpn_sonar_anchor_gen,
-        rpn_pre_nms_top_n_train=8000, rpn_pre_nms_top_n_test=8000, # 8000 got good results on test
-        rpn_post_nms_top_n_train=4000, rpn_post_nms_top_n_test=4000, # 4000 got good results on test
+        rpn_pre_nms_top_n_train=8000, rpn_pre_nms_top_n_test=4000, # 8000 got good results on test
+        rpn_post_nms_top_n_train=4000, rpn_post_nms_top_n_test=2000, # 4000 got good results on test
         image_mean=[0.199, 0.199, 0.199], image_std=[0.058, 0.058, 0.058], # sonar train set values
     )
     '''
@@ -943,7 +826,7 @@ dataset_tuple_list = [
     #(var36_limb_novar,'var36_limb_novar'),
     #(var38_pose5,'var38_pose5'),
     #(var37_sonar_blunt,'var37_sonar_blunt'),
-    (var313_real20synth80,'var313_real20synth80',dev_var313_real20synth80), # TODO loss is nan, do dev eval on same ratio (20 real 80 synth here for example, make the new sets)
+    (var313_real20synth80,'var313_real20synth80',dev_var313_real20synth80),
     (var311_real50synth50,'var311_real50synth50',dev_var311_real50synth50),
     (var312_real80synth20,'var312_real80synth20',dev_var312_real80synth20),
     (extra_real50synth50,'extra_real50synth50'),

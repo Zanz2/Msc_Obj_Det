@@ -467,8 +467,6 @@ save_debug_folder = 'C:/Users/zanza/Desktop/predictions/renders/generated/transp
 #bg_folder = 'D:/generated_transparent_bg/bg_dev_synthetic/'
 bg_folder = 'C:/Users/zanza/Desktop/predictions/renders/generated/transparent_bg/bg_train_synthetic/'
 
-print("---------Running new version with bg object-----------")
-
 #generate_renders(save_folder,save_debug_folder,300)
 
 # IMPORTANT when anyone else that is not me is running this, the blender python interpreter wont have numpy and cv2, you DO NOT NEED to install it

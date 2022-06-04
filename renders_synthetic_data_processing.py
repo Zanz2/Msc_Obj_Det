@@ -183,7 +183,6 @@ def noisy(image,mask,type): # TODO WIP seperate random noise profiles depending 
                         output[i][j][0] = ret[index] # add some noise to B G and R
                         output[i][j][1] = ret[index]
                         output[i][j][2] = ret[index]
-
     return output
 
 def apply_blur(image_name): # TODO WIP apply blur
@@ -192,7 +191,6 @@ def apply_blur(image_name): # TODO WIP apply blur
 def apply_pixelation(image_name, downsample_size): # downsample size = (w,h), it takes in grayscale images
     new_img = image_name
     # new_img = cv2.normalize(new_img, None, 0, 255, cv2.NORM_MINMAX)
-
     # desired output size
     height, width = new_img.shape
     # Desired "pixelated" size
@@ -266,7 +264,6 @@ def render_to_background(renders_folder,backgrounds_object,n_neg_per_pos=2,outpu
         do_salt_and_pepper_noise = config_dict["do_salt_and_pepper_noise"]
         do_alpha_blending = config_dict["do_alpha_blending"]
 
-
     samples_len = len(os.listdir(renders_folder)[samples_counter:])
     print_len = samples_len+samples_counter
     for fg_file in os.listdir(renders_folder)[samples_counter:]:
@@ -288,7 +285,6 @@ def render_to_background(renders_folder,backgrounds_object,n_neg_per_pos=2,outpu
         foreground_whitealpha = cv2.merge((B, G, R))
         foreground_whitealpha = cv2.cvtColor(foreground_whitealpha, cv2.COLOR_BGR2GRAY)
         #print("Unique gray values in this image: {}".format(np.unique(foreground_whitealpha))) # useful for finding background - body - shadow tresholding limits
-
 
         grey_tresh_min = 50  # below this pixel value is shadow
         grey_tresh_max = 200  # above this pixel value is background
