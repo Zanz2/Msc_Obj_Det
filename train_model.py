@@ -17,7 +17,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import torchvision
 import albumentations as A
-import utils2
+import utils_mod
 import math
 import sys
 import time
@@ -388,8 +388,8 @@ def custom_evaluate(res_dict,targets,current_dict,images=[],visualize=False,IOU_
 
 def train_one_epoch(model, optimizer, data_loader, device, epoch, scaler=None, print_every=250):
     model.train()
-    metric_logger = utils2.MetricLogger(delimiter="  ")
-    metric_logger.add_meter("lr", utils2.SmoothedValue(window_size=1, fmt="{value:.6f}"))
+    metric_logger = utils_mod.MetricLogger(delimiter="  ")
+    metric_logger.add_meter("lr", utils_mod.SmoothedValue(window_size=1, fmt="{value:.6f}"))
     header = f"Epoch: [{epoch}]"
 
     cumulative_stats_dict = {}
@@ -402,7 +402,7 @@ def train_one_epoch(model, optimizer, data_loader, device, epoch, scaler=None, p
             loss_dict = model(images, targets)
             losses = sum(loss for loss in loss_dict.values())
 
-        loss_dict_reduced = utils2.reduce_dict(loss_dict)
+        loss_dict_reduced = utils_mod.reduce_dict(loss_dict)
         losses_reduced = sum(loss for loss in loss_dict_reduced.values())
 
         loss_value = losses_reduced.item()
@@ -475,7 +475,7 @@ def evaluate(model, data_loader, device, eval_visualize=False):
     torch.set_num_threads(1)
     cpu_device = torch.device("cpu")
     model.eval()
-    metric_logger = utils2.MetricLogger(delimiter="  ")
+    metric_logger = utils_mod.MetricLogger(delimiter="  ")
     header = "Test:"
 
     coco = get_coco_api_from_dataset(data_loader.dataset)
@@ -551,11 +551,12 @@ global_eval_current_model_path = ""
 global_label2id = { "confirmed_body": 1, "bike": 2, "anomaly": 3, "debris": 4}
 global_id2label = {1: "confirmed_body",2: "bike", 3: "anomaly", 4: "debris"}
 
-def main(train_dataset_path="",train_dataset_name="",dev_path=None):
-    if train_dataset_name != "":
+def main(train_dataset_path=None,train_dataset_name=None,dev_path=None):
+    if train_dataset_name is not None:
         print("---------------------------------------------------------------------------------------------")
         print("NOW TRAINING ON {}, PATH {}".format(train_dataset_name,train_dataset_path))
         print("---------------------------------------------------------------------------------------------")
+    else: train_dataset_name = ""
     # laptop = "C:/Users/zanza/Desktop/MSC_work/Msc_Obj_Det/"
     # desktop = "C:/Users/Moji podatki/Desktop/github/Msc_Obj_Det/"
     prefix = "C:/Users/Moji podatki/Desktop/github/Msc_Obj_Det/"
@@ -605,7 +606,7 @@ def main(train_dataset_path="",train_dataset_name="",dev_path=None):
     dev = output_folder + "dev"
 
     classes_to_ignore = ["debris", "bike", "anomaly"]  # global_label2id and id2label index order also has to be updated after changing this
-    if train_dataset_path == "":
+    if train_dataset_path is None:
         # train_dataset = SonarDataset(train,csv_file,sonar_transform,type="oversampled",ignored_list=classes_to_ignore) # 2x oversampling with data augmentation
         train_dataset = SonarDataset(train_synth, csv_file, sonar_transform,ignored_list=classes_to_ignore) # change the first param here for different datasets
     else:
