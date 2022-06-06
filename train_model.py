@@ -625,7 +625,7 @@ def main(train_dataset_path=None,train_dataset_name=None,dev_path=None):
     pretrain_coco = False # mutually exclusive
     pretrain_imagenet = False # mutually exclusive
     weight_decay_val = 0 # 0 used for real data
-    bb_train_val = 5
+    bb_train_val = 5 if pretrain_imagenet else None # set a value if pretrained, else ignore it
     num_classes = 5 - len(classes_to_ignore)  # bike + anomaly + confirmed_victim + debris + background
     lr_val = 0.0001 # 0.0001 used for real data
     early_stopping_max_epochs_no_improvement = 5
