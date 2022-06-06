@@ -244,18 +244,18 @@ def populate_backgrounds(backgrounds_folder, bg_number):
     bg_object.set_backgrounds(backgrounds_bag)
     return bg_object
 
-def render_to_background(renders_folder,backgrounds_object,n_neg_per_pos=2,outputs_folder_suffix="",config_dict=None, samples_counter=0,output_root=""):
+def render_to_background(renders_folder,backgrounds_object,n_neg_per_pos=2,config_dict=None, samples_counter=0,output_root=None):
     # n_neg_per_pos is every positive sample also causes 2 negative samples, so the ratios is calculated as n_neg_per_pos+1 (default 1 in 3 pos to neg ratio)
-    list_of_anchors = []
-    if output_root == "":
-        output_root = "{}/../outputs{}".format(renders_folder,outputs_folder_suffix)
+    list_of_anchors = [] # bbox info goes here (fully automated annotation)
+    if output_root is None:
+        output_root = "{}/../outputs".format(renders_folder)
 
     debug_mode = False
     poses_in_seperate_folders = False
     save_img = True
     show_image_mode = False
 
-    if config_dict is None:
+    if config_dict is None: # if noises to apply arent specified, apply all
         do_pixelation = True
         do_salt_and_pepper_noise = True
         do_alpha_blending = True
@@ -264,20 +264,20 @@ def render_to_background(renders_folder,backgrounds_object,n_neg_per_pos=2,outpu
         do_salt_and_pepper_noise = config_dict["do_salt_and_pepper_noise"]
         do_alpha_blending = config_dict["do_alpha_blending"]
 
-    samples_len = len(os.listdir(renders_folder)[samples_counter:])
-    print_len = samples_len+samples_counter
+    samples_len = len(os.listdir(renders_folder)[samples_counter:]) # the program never crashed, but if it did, you can resume by specifying a sample counter value for the render where it left off
+    print_len = samples_len+samples_counter # just to accurately print progress if the program crashed and you specified a sample counter to resume at
     for fg_file in os.listdir(renders_folder)[samples_counter:]:
         if not fg_file.endswith(".png"): continue
 
         print("Processing {}/{}".format(samples_counter, print_len))
         render_file = os.path.join(renders_folder, fg_file)
         current_render = render_file
-        current_bg = backgrounds_object.get_background()
+        current_bg = backgrounds_object.get_background() # from the list of supplied backgrounds with NO positive samples (only negatives) get a random one
         background = cv2.imread(current_bg)
 
-        foreground_bbox = cv2.imread(current_render, cv2.IMREAD_UNCHANGED)
+        foreground_bbox = cv2.imread(current_render, cv2.IMREAD_UNCHANGED) # read the render image into an opencv matrix with the alpha channel
 
-        B, G, R, A = cv2.split(foreground_bbox)   # makes transparency white, for easier bbox detection
+        B, G, R, A = cv2.split(foreground_bbox)   # makes transparency white, for automatic bbox detection
         alpha = A / 255
         R = (255 * (1 - alpha) + R * alpha).astype(np.uint8)
         G = (255 * (1 - alpha) + G * alpha).astype(np.uint8)
@@ -319,7 +319,7 @@ def render_to_background(renders_folder,backgrounds_object,n_neg_per_pos=2,outpu
         white_image = white_image * 255
         foreground_body = white_image.copy()
         foreground_shadow = white_image.copy()
-        foreground_body[body_locs[0], body_locs[1]] = foreground_pixelated[body_locs[0], body_locs[1]]
+        foreground_body[body_locs[0], body_locs[1]] = foreground_pixelated[body_locs[0], body_locs[1]] # its named pixelated even though pixelation isnt necessarily applied in different noise profiles
         foreground_shadow[shadow_locs[0], shadow_locs[1]] = foreground_pixelated[shadow_locs[0], shadow_locs[1]]
 
         background = cv2.cvtColor(background, cv2.COLOR_RGB2BGRA)
