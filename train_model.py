@@ -83,40 +83,36 @@ def fasterrcnn_resnet18(num_classes=91, pretrained_backbone=True,trainable_bb_la
     model = FasterRCNN(backbone, num_classes, **kwargs)
     return model
 
-def plot_x_y(train_loss,val_loss=[],f1_score_list=[],mode="",path=""):
+def plot_x_y(x_ax,y_ax=[],f1_score_list=[],mode="",path=""):
     plt.clf()
-    lim = 0.5
-    if max(train_loss) > 0.5: lim = 1
+    ylim, xlim = 1, 1
     if mode == "loss_plot":
-        plt.plot(train_loss)
-        plt.plot(val_loss)
+        plt.plot(x_ax)
+        plt.plot(y_ax)
         plt.title("Train is blue, eval is orange")
-        if os.path.isfile("LossPlot.png"): os.remove("LossPlot.png")
-        plt.savefig("LossPlot.png", bbox_inches='tight')
+        if os.path.isfile(path): os.remove(path)
+        plt.savefig(path, bbox_inches='tight')
     if mode == "f1_plot":
-        plt.plot(train_loss)
-        plt.ylim([0, lim])
+        plt.plot(x_ax)
+        plt.ylim([0, ylim])
         plt.title("Evaluation f1")
-        if os.path.isfile("{}EvalF1Plot.png".format(path)): os.remove("{}EvalF1Plot.png".format(path))
-        plt.savefig("{}EvalF1Plot.png".format(path), bbox_inches='tight')
+        if os.path.isfile(path): os.remove(path)
+        plt.savefig(path, bbox_inches='tight')
     if mode == "precision_recall":
-        xlim = 0.5
-        if max(val_loss) > 0.5: xlim = 1
-        plt.ylim([0, lim])
+        plt.ylim([0, ylim])
         plt.xlim([0, xlim])
-        plt.plot(val_loss, train_loss)
+        plt.plot(y_ax, x_ax)
+        add_str = ""
         if len(f1_score_list) > 0:
-            plt.plot(f1_score_list,train_loss)
+            plt.plot(f1_score_list,x_ax)
+            add_str = "Orange = f1 score for each step on y with score on X | On blue line"
 
-        plt.title("Precision is Y, recall is X")
-        if os.path.isfile("{}PRCurve.png".format(path)): os.remove("{}PRCurve.png".format(path))
-        plt.savefig("{}PRCurve.png".format(path), bbox_inches='tight')
+        plt.title("{} precision = Y, recall = X".format(add_str))
+        if os.path.isfile(path): os.remove(path)
+        plt.savefig(path, bbox_inches='tight')
 
 def obj_collate_fn(batch):
     return tuple(zip(*batch))
-
-def round_down(x, a):
-    return math.floor(x / a) * a
 
 class SonarDataset(torch.utils.data.Dataset):
     def __init__(self, root, csv_file, transforms, type="normal",preshuffle=False,first_n=0,ignored_list=[]):
@@ -379,10 +375,18 @@ def custom_evaluate(res_dict,targets,current_dict,images=[],visualize=False,IOU_
             vis_pred_scores = [pred_scores[index] for index, _ in enumerate(pred_boxes) if pred_scores[index] > SCORE_TRESHOLD]
 
             numpy_image = tensor_to_img(images[img_index])
-            if global_eval_current_model_path != "":
-                visualize_bbox(numpy_image,vis_pred_boxes,gt_boxes,vis_pred_labels,gt_labels,vis_pred_scores,"{}/predictions/img_id{}".format(global_eval_current_model_path,gt_target["image_id"].item()))
+            if global_eval_current_model_path is not None:
+                save_folder = "{}/predictions/".format(global_eval_current_model_path)
+                save_path = "{}img_id{}".format(save_folder,gt_target["image_id"].item())
+                if not os.path.exists(save_folder):
+                    os.makedirs(save_folder)
+                visualize_bbox(numpy_image,vis_pred_boxes,gt_boxes,vis_pred_labels,gt_labels,vis_pred_scores,save_name=save_path)
             else:
-                visualize_bbox(numpy_image,vis_pred_boxes,gt_boxes,vis_pred_labels,gt_labels,vis_pred_scores,"F:/projekti/msc_sonar_models/visualizations/predictions/img_id{}".format(gt_target["image_id"].item()))
+                save_folder = "F:/projekti/msc_sonar_models/visualizations/predictions/"
+                save_path = "{}img_id{}".format(save_folder,gt_target["image_id"].item())
+                if not os.path.exists(save_folder):
+                    os.makedirs(save_folder)
+                visualize_bbox(numpy_image,vis_pred_boxes,gt_boxes,vis_pred_labels,gt_labels,vis_pred_scores,save_name=save_path)
 
     return current_dict
 
@@ -547,16 +551,16 @@ def evaluate(model, data_loader, device, eval_visualize=False):
 
 device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
 #device = "cpu"
-global_eval_current_model_path = ""
+global_eval_current_model_path = None
 global_label2id = { "confirmed_body": 1, "bike": 2, "anomaly": 3, "debris": 4}
 global_id2label = {1: "confirmed_body",2: "bike", 3: "anomaly", 4: "debris"}
 
-def main(train_dataset_path=None,train_dataset_name=None,dev_path=None):
-    if train_dataset_name is not None:
+def main(train_path=None,model_save_name=None,dev_path=None,oversample_param=False,test_mode = -1): # test mode = -1 means do training loop
+    if model_save_name is not None:
         print("---------------------------------------------------------------------------------------------")
-        print("NOW TRAINING ON {}, PATH {}".format(train_dataset_name,train_dataset_path))
+        print("NOW TRAINING ON {}, PATH {}".format(model_save_name,train_path))
         print("---------------------------------------------------------------------------------------------")
-    else: train_dataset_name = ""
+    else: model_save_name = ""
     # laptop = "C:/Users/zanza/Desktop/MSC_work/Msc_Obj_Det/"
     # desktop = "C:/Users/Moji podatki/Desktop/github/Msc_Obj_Det/"
     prefix = "C:/Users/Moji podatki/Desktop/github/Msc_Obj_Det/"
@@ -586,42 +590,32 @@ def main(train_dataset_path=None,train_dataset_name=None,dev_path=None):
     # salt_and_pepper_noise (generated from sonar body and shadow pixel value distribution)
     # alpha_blending (blends the body and shadow to background each with their own alpha transparency value using a bitwise body and shadow mask obtained using tresholding)
     train_synth = "F:/projekti/msc_sonar_models/synthetic_datasets/train_synth/outputs_{}_train/all".format(synthetic_noise_profiles[current_noise_profile])
-    test_synth = "F:/projekti/msc_sonar_models/synthetic_datasets/test_synth/outputs_{}_test/all".format(synthetic_noise_profiles[current_noise_profile])
+    test_synth_base = "F:/projekti/msc_sonar_models/synthetic_datasets/test_synth/outputs_{}_test/all".format(synthetic_noise_profiles[0])
+    test_synth_2 = "F:/projekti/msc_sonar_models/synthetic_datasets/test_synth/outputs_{}_test/all".format(synthetic_noise_profiles[1])
+    test_synth_3 = "F:/projekti/msc_sonar_models/synthetic_datasets/test_synth/outputs_{}_test/all".format(synthetic_noise_profiles[2])
     dev_synth = "F:/projekti/msc_sonar_models/synthetic_datasets/dev_synth/outputs_{}_dev/all".format(synthetic_noise_profiles[current_noise_profile])
-
-    root_folder = 'F:/projekti/msc_sonar_models/synthetic_datasets/train_synth/outputs_base_train/'
-    var313_real20synth80 = root_folder + "20real80synth"
-    var311_real50synth50 = root_folder + "50real50synth"
-    var312_real80synth20 = root_folder + "80real20synth"
-    var32_eight = root_folder + "8000"
-    var33_four = root_folder + "4000"
-    var34_two = root_folder + "2000"
-    var35_one = root_folder + "1000"
-    var36_limb_novar = root_folder + "limb_limbvarxnone"
-    var38_pose5 = root_folder + "pose_pose5"
-    var37_sonar_blunt = root_folder + "sonar_blunt"
 
     train = output_folder + "train"
     test = output_folder + "test"
     dev = output_folder + "dev"
 
     classes_to_ignore = ["debris", "bike", "anomaly"]  # global_label2id and id2label index order also has to be updated after changing this
-    if train_dataset_path is None:
-        # train_dataset = SonarDataset(train,csv_file,sonar_transform,type="oversampled",ignored_list=classes_to_ignore) # 2x oversampling with data augmentation
-        train_dataset = SonarDataset(train_synth, csv_file, sonar_transform,ignored_list=classes_to_ignore) # change the first param here for different datasets
+    if train_path is None:
+        train_path = train # use real data if synth not specified
+    if dev_path is None:
+        dev_path = dev
+
+    test_path_list = [test,test_synth_base,test_synth_2,test_synth_3]
+    test_path = test_path_list[test_mode]
+
+    if oversample_param:
+        train_dataset = SonarDataset(train_path, csv_file, sonar_transform,type="oversampled",ignored_list=classes_to_ignore)
     else:
-        print("Using loop train dataset_path {}".format(train_dataset_path))
-        train_dataset = SonarDataset(train_dataset_path, csv_file, sonar_transform,type="oversampled",ignored_list=classes_to_ignore) # change the first param here for different datasets
+        train_dataset = SonarDataset(train_path, csv_file, sonar_transform,ignored_list=classes_to_ignore)
+    dev_dataset = SonarDataset(dev_path, csv_file, sonar_eval_transform, ignored_list=classes_to_ignore)
+    test_dataset = SonarDataset(test_path,csv_file,sonar_eval_transform,ignored_list=classes_to_ignore)
 
-    #dev_dataset = SonarDataset(dev,csv_file,sonar_eval_transform,ignored_list=classes_to_ignore)
-    if dev_path is not None:
-        dev_dataset = SonarDataset(dev_path, csv_file, sonar_eval_transform, ignored_list=classes_to_ignore)
-    else:
-        dev_dataset = SonarDataset(dev, csv_file, sonar_eval_transform, ignored_list=classes_to_ignore)
-
-    test_dataset = SonarDataset(test,csv_file,sonar_eval_transform,ignored_list=classes_to_ignore)
-    #test_dataset = SonarDataset(test_synth, csv_file, sonar_eval_transform, ignored_list=classes_to_ignore)
-
+    deep_model = False
     pretrain_coco = False # mutually exclusive
     pretrain_imagenet = False # mutually exclusive
     weight_decay_val = 0 # 0 used for real data
@@ -630,7 +624,10 @@ def main(train_dataset_path=None,train_dataset_name=None,dev_path=None):
     lr_val = 0.0001 # 0.0001 used for real data
     early_stopping_max_epochs_no_improvement = 5
 
-    train_mode = True # either train or eval
+    if test_mode == -1:
+        train_mode = True
+    else:
+        train_mode = False
     train_score_treshold = 0.0 # you can choose to ignore predictions below a certain treshold when calculating best model eval metrics,
     # but you shouldnt, rather you should set the nms in the custom evaluate function and use that to cull some FP's
     vizualize_image_predictions_eval = False
@@ -638,7 +635,10 @@ def main(train_dataset_path=None,train_dataset_name=None,dev_path=None):
 
     # top options: resnet50 or resnet18
     # bb_train_val 4 or use model from scratch ( scratch slightly better than pretrained but it is not significant)
-
+    print("Using datasets:")
+    print("Train (oversample:{}): {}".format(oversample_param,train_path))
+    print("Dev: {}".format(dev_path))
+    print("applicable f false=={} test: {}".format(train_mode,test_path))
     print("Original shape:{}, new transformed shape:{}".format(train_dataset.get_image(21).shape,train_dataset[21][0].shape))
     print("random sample image min normalized pixel val {} max val {}".format(torch.min(train_dataset[21][0]),torch.max(train_dataset[21][0])))
     print("is that random sample image on cuda (False is normal)? {}".format(train_dataset[21][0].is_cuda))
@@ -651,6 +651,7 @@ def main(train_dataset_path=None,train_dataset_name=None,dev_path=None):
     print("Pretrained on coco:{}, pretrained on imagenet:{}".format(pretrain_coco,pretrain_imagenet))
     print("Weight decay:{},LR:{}, trainable bb layers (5 is all, N/a when it isnt pretrained):{}".format(weight_decay_val,lr_val,bb_train_val))
     print("Noise set: {}".format(synthetic_noise_profiles[current_noise_profile]))
+    print("Deep model? {}".format(deep_model))
 
     # original sizes: ((32,), (64,), (128,), (256,), (512,))
     anchor_sizes = ((20,), (42,), (62,), (100,), (280,))
@@ -659,25 +660,25 @@ def main(train_dataset_path=None,train_dataset_name=None,dev_path=None):
     rpn_sonar_anchor_gen = AnchorGenerator(
         anchor_sizes, aspect_ratios
     )
-    '''
-    model = fasterrcnn_resnet18(
-        pretrained_backbone=pretrain_imagenet,
-        trainable_bb_layers=bb_train_val, # 5 is all (none are frozen)
-        rpn_anchor_generator=rpn_sonar_anchor_gen,
-        rpn_pre_nms_top_n_train=8000, rpn_pre_nms_top_n_test=4000, # 8000 got good results on test
-        rpn_post_nms_top_n_train=4000, rpn_post_nms_top_n_test=2000, # 4000 got good results on test
-        image_mean=[0.199, 0.199, 0.199], image_std=[0.058, 0.058, 0.058], # sonar train set values
-    )
-    '''
-    model = torchvision.models.detection.fasterrcnn_resnet50_fpn(
-        pretrained=pretrain_coco,
-        pretrained_backbone=pretrain_imagenet,
-        trainable_backbone_layers=bb_train_val, # 5 is all (none are frozen)
-        rpn_anchor_generator=rpn_sonar_anchor_gen, # cannot be pretrained on coco with this anchor generator
-        rpn_pre_nms_top_n_train=8000, rpn_pre_nms_top_n_test=4000, # 8000 got good results on test
-        rpn_post_nms_top_n_train=4000, rpn_post_nms_top_n_test=2000, # 4000 got good results on test
-        image_mean=[0.199, 0.199, 0.199], image_std=[0.058, 0.058, 0.058], # sonar train set values
-    )
+    if not deep_model:
+        model = fasterrcnn_resnet18(
+            pretrained_backbone=pretrain_imagenet,
+            trainable_bb_layers=bb_train_val, # 5 is all (none are frozen)
+            rpn_anchor_generator=rpn_sonar_anchor_gen,
+            rpn_pre_nms_top_n_train=8000, rpn_pre_nms_top_n_test=4000, # 8000 got good results on test
+            rpn_post_nms_top_n_train=4000, rpn_post_nms_top_n_test=2000, # 4000 got good results on test
+            image_mean=[0.199, 0.199, 0.199], image_std=[0.058, 0.058, 0.058], # sonar train set values
+        )
+    else:
+        model = torchvision.models.detection.fasterrcnn_resnet50_fpn(
+            pretrained=pretrain_coco,
+            pretrained_backbone=pretrain_imagenet,
+            trainable_backbone_layers=bb_train_val, # 5 is all (none are frozen)
+            rpn_anchor_generator=rpn_sonar_anchor_gen, # cannot be pretrained on coco with this anchor generator
+            rpn_pre_nms_top_n_train=8000, rpn_pre_nms_top_n_test=4000, # 8000 got good results on test
+            rpn_post_nms_top_n_train=4000, rpn_post_nms_top_n_test=2000, # 4000 got good results on test
+            image_mean=[0.199, 0.199, 0.199], image_std=[0.058, 0.058, 0.058], # sonar train set values
+        )
 
     # get number of input features for the classifier
     in_features = model.roi_heads.box_predictor.cls_score.in_features
@@ -705,9 +706,8 @@ def main(train_dataset_path=None,train_dataset_name=None,dev_path=None):
     train_loss_list, val_loss_list, precision_list, recall_list, f1_list = [], [], [], [], []
     best_recall, best_precision, best_f1, best_ap, stopping_counter = 0, 0, 0, 0, 0
 
-    eval_test = [ # in each of these folders there should be atleast 1 model that ends with .pt, and a folder of the same name (without .pt)
-        "F:/projekti/msc_sonar_models/train_folder/"
-    ]
+    eval_folder = "F:/projekti/msc_sonar_models/train_folder/" # this folder should contain subfolders of model names with .pt files in them
+
 
     if train_mode:
         for epoch in range(num_epochs):
@@ -742,15 +742,19 @@ def main(train_dataset_path=None,train_dataset_name=None,dev_path=None):
 
             if ap > best_ap: #f1_score > best_f1: #(recall+min(precision,0.15)) > (best_recall+best_precision): # with a train score treshold of 0.5, 0.15 is a reasonable max precision before recall gets compromised
                 print("Improvement, saved model!")
-                torch.save(model, "F:/projekti/msc_sonar_models/saved_model_best_{}.pt".format(train_dataset_name))
+                if deep_model:
+                    s_addition = "deep"
+                else:
+                    s_addition = "shallow"
+                torch.save(model, "F:/projekti/msc_sonar_models/saved_model_best_{}_{}.pt".format(model_save_name,s_addition))
                 best_ap = ap
                 #best_f1 = f1_score
                 stopping_counter = 0
             else:
                 stopping_counter = stopping_counter + 1 # early stopping criteria : no improvement to AP in 5 epochs, break
 
-            plot_x_y(f1_list, mode="f1_plot")
-            plot_x_y(train_loss_list, val_loss_list, mode="loss_plot")
+            plot_x_y(f1_list, mode="f1_plot",path="EvalF1Plot.png")
+            plot_x_y(train_loss_list, val_loss_list, mode="loss_plot",path="LossPlot.png")
             print("Eval custom metrics:")
             print("Total and correct labels to indexes {}".format(global_label2id))
             print(eval_stats)
@@ -760,84 +764,123 @@ def main(train_dataset_path=None,train_dataset_name=None,dev_path=None):
             if stopping_counter == early_stopping_max_epochs_no_improvement: break
 
     else:
-        for model_dir in eval_test:
-            for file in os.listdir(model_dir):
-                if file.endswith(".pt"):
-                    model_name = os.path.join(model_dir, file)
-                    global_eval_current_model_path = os.path.join(model_dir, os.path.splitext(file)[0])
-                    print("---------------------------- now working on -------------------------------")
-                    print(model_name)
-                    print(global_eval_current_model_path)
+        for model_folder in os.listdir(eval_folder): # go over the parent directory for each model to be evaluated
+            model_dir = os.path.join(eval_folder, model_folder)
+            if not os.path.isdir(model_dir): continue
+            pt_file = None
+            for file in os.listdir(model_dir): # for each subfolder find its .pt file
+                if file.endswith(".pt"): pt_file = file
+            if pt_file == None: continue
 
-                    torch.cuda.empty_cache()
-                    model = torch.load(model_name)
-                    model.eval()
-                    coco_eval_obj, eval_stats = evaluate(model,test_dataloader,device=device,eval_visualize = vizualize_image_predictions_eval)
-                    precision_list = []
-                    recall_list = []
-                    f1_list = []
-                    for score_step in range(0,10):
-                        if eval_stats["confidences"][score_step]["TP"] != 0:
-                            tp = eval_stats["confidences"][score_step]["TP"]
-                            fp = eval_stats["confidences"][score_step]["FP"]
-                            fn = eval_stats["confidences"][score_step]["FN"]
-                            precision = tp / (tp + fp)
-                            recall = tp / (tp + fn)
-                            f1_score = 2 * ((precision * recall) / (precision + recall))
-                        else:
-                            precision, recall, f1_score = 0, 0, 0
-                        precision_list.append(precision)
-                        recall_list.append(recall)
-                        f1_list.append(f1_score)
-                    print("labels to indexes {}".format(global_label2id))
-                    print(eval_stats)
-                    print("Max recall:{}".format(max(recall_list)))
-                    print("Max precision:{}".format(max(precision_list)))
-                    print("Max f1:{}".format(max(f1_list)))
-                    plot_x_y(precision_list,recall_list,f1_score_list=f1_list,mode="precision_recall",path=global_eval_current_model_path+"/")
+            model_name = os.path.join(model_dir, pt_file)
+            global_eval_current_model_path = model_dir
+            print("---------------------------- now working on -------------------------------")
+            print(model_name)
+            print(global_eval_current_model_path)
+            torch.cuda.empty_cache()
+            model = torch.load(model_name)
+            model.eval()
+            coco_eval_obj, eval_stats = evaluate(model,test_dataloader,device=device,eval_visualize = vizualize_image_predictions_eval)
+            precision_list = []
+            recall_list = []
+            f1_list = []
+            for score_step in range(0,10):
+                if eval_stats["confidences"][score_step]["TP"] != 0:
+                    tp = eval_stats["confidences"][score_step]["TP"]
+                    fp = eval_stats["confidences"][score_step]["FP"]
+                    fn = eval_stats["confidences"][score_step]["FN"]
+                    precision = tp / (tp + fp)
+                    recall = tp / (tp + fn)
+                    f1_score = 2 * ((precision * recall) / (precision + recall))
+                else:
+                    precision, recall, f1_score = 0, 0, 0
+                precision_list.append(precision)
+                recall_list.append(recall)
+                f1_list.append(f1_score)
+            ap = coco_eval_obj.coco_eval["bbox"].stats[1]
+            print("labels to indexes {}".format(global_label2id))
+            print(eval_stats)
+            print("Max recall:{}".format(max(recall_list)))
+            print("Max precision:{}".format(max(precision_list)))
+            print("Max f1:{}".format(max(f1_list)))
+            print("AP: {}".format(ap))
+            mode_str_ = ""
+            if test_mode == 0: mode_str_ = "real"
+            if test_mode == 1: mode_str_ = "synth_base"
+            if test_mode == 2: mode_str_ = "synth_2"
+            if test_mode == 3: mode_str_ = "synth_3"
+            plot_x_y(precision_list,recall_list,f1_score_list=f1_list,mode="precision_recall",path="{}/PRCurve_withf1_{}.png".format(global_eval_current_model_path,mode_str_))
+            plot_x_y(precision_list, recall_list, mode="precision_recall",path="{}/PRCurve_{}_AP{}.png".format(global_eval_current_model_path,mode_str_,round(ap, 2)))
 
     print("That's it!")
 
 
-root_folder = 'F:/projekti/msc_sonar_models/synthetic_datasets/train_synth/outputs_base_train/'
-dev_root = 'F:/projekti/msc_sonar_models/synthetic_datasets/dev_synth/outputs_base_dev/'
+if False: # Batch train mode:
+    root_folder = 'F:/projekti/msc_sonar_models/synthetic_datasets/train_synth/outputs_base_train/'
+    dev_root = 'F:/projekti/msc_sonar_models/synthetic_datasets/dev_synth/outputs_base_dev/'
 
-var313_real20synth80 = root_folder + "20real80synth"
-var311_real50synth50 = root_folder + "50real50synth"
-var312_real80synth20 = root_folder + "80real20synth"
-dev_var313_real20synth80 = dev_root + "20real80synth"
-dev_var311_real50synth50 = dev_root + "50real50synth"
-dev_var312_real80synth20 = dev_root + "80real20synth"
+    var1and2_realtrain = 'C:/Users/Moji podatki/Desktop/github/Msc_Obj_Det/data/vott/run3_big/output/vott-csv-export/train'
+
+    var3_synthbasenoise = root_folder + "all"
+    dev_var3_synthbasenoise = dev_root + "all"
+
+    var313_real20synth80 = root_folder + "20real80synth"
+    var311_real50synth50 = root_folder + "50real50synth"
+    var312_real80synth20 = root_folder + "80real20synth"
+    dev_var313_real20synth80 = dev_root + "20real80synth"
+    dev_var311_real50synth50 = dev_root + "50real50synth"
+    dev_var312_real80synth20 = dev_root + "80real20synth"
 
 
-var32_eight = root_folder + "8000"
-var33_four = root_folder + "4000"
-var34_two = root_folder + "2000"
-var35_one = root_folder + "1000"
-var36_limb_novar = root_folder + "limb_limbvarxnone"
-var38_pose5 = root_folder + "pose_pose5"
-var37_sonar_blunt = root_folder + "sonar_blunt"
-extra_real50synth50 = root_folder + "extra_real50synth50"
+    var32_eight = root_folder + "8000"
+    var33_four = root_folder + "4000"
+    var34_two = root_folder + "2000"
+    var35_one = root_folder + "1000"
+    var36_limb_novar = root_folder + "limb_limbvarxnone"
+    var37_sonar_blunt = root_folder + "sonar_blunt"
+    var38_pose5 = root_folder + "pose_pose5"
+    dev_var32to38 = dev_root + "all"
 
-dataset_tuple_list = [
-    #(var32_eight,'var32_eight'),
-    #(var33_four,'var33_four'),
-    #(var34_two,'var34_two'),
-    #(var35_one,'var35_one'),
-    #(var36_limb_novar,'var36_limb_novar'),
-    #(var38_pose5,'var38_pose5'),
-    #(var37_sonar_blunt,'var37_sonar_blunt'),
-    (var313_real20synth80,'var313_real20synth80',dev_var313_real20synth80),
-    (var311_real50synth50,'var311_real50synth50',dev_var311_real50synth50),
-    (var312_real80synth20,'var312_real80synth20',dev_var312_real80synth20),
-    (extra_real50synth50,'extra_real50synth50'),
-]
+    var4_noise2 = 'F:/projekti/msc_sonar_models/synthetic_datasets/train_synth/outputs_2_train/all'
+    dev_var4_noise2 = 'F:/projekti/msc_sonar_models/synthetic_datasets/dev_synth/outputs_2_dev/all'
 
-for dt_tup in dataset_tuple_list: # makes everything very efficient but i cant use dataset loader workers
-    if len(dt_tup) == 3:
-        dev_path = dt_tup[2]
-    else:
-        dev_path = None
-    dataset_path = dt_tup[0]
-    dataset_name = dt_tup[1]
-    main(dataset_path,dataset_name,dev_path)
+    var5_noise3 = 'F:/projekti/msc_sonar_models/synthetic_datasets/train_synth/outputs_3_train/all'
+    dev_var5_noise3 = 'F:/projekti/msc_sonar_models/synthetic_datasets/dev_synth/outputs_3_dev/all'
+
+    extra_real50synth50 = root_folder + "extra_real50synth50"
+
+    dataset_tuple_list = [
+        (var1and2_realtrain, 'var1and2_realtrain', None, True), # oversample is true when real data is used
+        (var3_synthbasenoise,'var3_synthbasenoise', dev_var3_synthbasenoise, False),
+        (var311_real50synth50, 'var311_real50synth50', dev_var311_real50synth50, True),
+        (var312_real80synth20, 'var312_real80synth20', dev_var312_real80synth20, True),
+        (var313_real20synth80, 'var313_real20synth80', dev_var313_real20synth80, True),
+        (var32_eight,'var32_eight',dev_var32to38,False),
+        (var33_four,'var33_four',dev_var32to38,False),
+        (var34_two,'var34_two',dev_var32to38,False),
+        (var35_one,'var35_one',dev_var32to38,False),
+        (var36_limb_novar,'var36_limb_novar',dev_var32to38,False),
+        (var37_sonar_blunt, 'var37_sonar_blunt', dev_var32to38, False),
+        (var38_pose5,'var38_pose5',dev_var32to38,False),
+        (var4_noise2,'var4_noise2',dev_var4_noise2,False),
+        (var5_noise3,'var5_noise3',dev_var5_noise3,False),
+
+        (extra_real50synth50,'extra_real50synth50',None,True),
+    ]
+
+    for dt_tup in dataset_tuple_list: # makes everything very efficient but i cant use dataset loader workers
+        if len(dt_tup) == 4:
+            oversample = dt_tup[3]
+        else:
+            oversample = False
+        dataset_path = dt_tup[0]
+        model_name_ = dt_tup[1]
+        dev_path_ = dt_tup[2]
+        main(train_path=dataset_path,model_save_name=model_name_,dev_path=dev_path_,oversample_param=oversample)
+
+else:
+    main(test_mode=0) # real
+    print("------------------------------------------------------------------------------------------")
+    print("FINISHED TEST SET ")
+    print("------------------------------------------------------------------------------------------")
+    main(test_mode=1) # base synth
