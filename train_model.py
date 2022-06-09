@@ -814,8 +814,8 @@ def main(train_path=None,model_save_name=None,dev_path=None,oversample_param=Fal
 
     print("That's it!")
 
-
-if False: # Batch train mode:
+if True:
+    # Batch train mode:
     root_folder = 'F:/projekti/msc_sonar_models/synthetic_datasets/train_synth/outputs_base_train/'
     dev_root = 'F:/projekti/msc_sonar_models/synthetic_datasets/dev_synth/outputs_base_dev/'
 
@@ -878,9 +878,15 @@ if False: # Batch train mode:
         dev_path_ = dt_tup[2]
         main(train_path=dataset_path,model_save_name=model_name_,dev_path=dev_path_,oversample_param=oversample)
 
-else:
-    main(test_mode=0) # real
+
+else: # holdout test mode
     print("------------------------------------------------------------------------------------------")
-    print("FINISHED TEST SET ")
     print("------------------------------------------------------------------------------------------")
-    main(test_mode=1) # base synth
+    print("STARTING HOLDOUT SET TESTING")
+    print("------------------------------------------------------------------------------------------")
+    print("------------------------------------------------------------------------------------------")
+    for test_mode_int in range(4): # 0 = real, 1 = synth base, 2 = synth noise 2, 3= synth noise 3
+        main(test_mode=test_mode_int)
+        print("------------------------------------------------------------------------------------------")
+        print("FINISHED TEST SET ")
+        print("------------------------------------------------------------------------------------------")
