@@ -10,7 +10,7 @@ import random
 
 
 sys.path.append( 'C:/Users/zanza/Desktop/MSC_work/Msc_Obj_Det/' )
-import renders_synthetic_data_processing as rsdp # not needed, see above
+#import renders_synthetic_data_processing as rsdp # not needed, see above
 
 '''
 Author: Žan Žagar (zanz2 on github)
@@ -467,7 +467,7 @@ save_debug_folder = 'C:/Users/zanza/Desktop/predictions/renders/generated/transp
 #bg_folder = 'D:/generated_transparent_bg/bg_dev_synthetic/'
 bg_folder = 'C:/Users/zanza/Desktop/predictions/renders/generated/transparent_bg/bg_train_synthetic/'
 
-#generate_renders(save_folder,save_debug_folder,300)
+generate_renders(save_folder,save_debug_folder,1)
 
 # IMPORTANT when anyone else that is not me is running this, the blender python interpreter wont have numpy and cv2, you DO NOT NEED to install it
 # 1. Run the above line in blender scripting to generate the renders ( first open the .blend file, open the scripting pane in the GUI, paste the code, run the script)
@@ -477,7 +477,7 @@ bg_folder = 'C:/Users/zanza/Desktop/predictions/renders/generated/transparent_bg
 # train random seed is 42, test is 1337, dev is 28
 # train has 2 neg per pos, dev 6 and test 9
 
-if True: # to not generate the post processing
+if False: # to not generate the post processing
 
     config_dict_base = {
         "do_pixelation": False,
