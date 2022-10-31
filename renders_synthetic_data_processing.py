@@ -556,11 +556,3 @@ prepare_ablation_folders() # then fill the relevant folders with negativves
 #anchor_box_analyze("C:/Users/zanza/Desktop/MSC_work/Msc_Obj_Det/data/vott/run3_big/output/vott-csv-export/06_02_2022_BIG-export_before_synth_added.csv")
 #print(logit2prob(-37.4874))
 #print(torch.sigmoid(torch.tensor(-37.4874,dtype=torch.float)))
-
-# ['09-06-2020%20Velden_data_likely_containing_targets_port_training_image_1000x1000_203.png',
-# '09-06-2020%20Velden_data_likely_containing_targets_starboard_training_image_1000x1000_201.png',
-# '09-06-2020%20Velden_data_likely_containing_targets_starboard_training_image_1000x1000_73.png',
-# '29-06-2020%20winterswijk_data_likely_containing_targets_port_training_image_1000x1000_150.png',
-# 'maarseveen_data_likely_containing_targets_starboard_training_image_1000x1000_29.png',
-# 'maarseveen_data_likely_containing_targets_starboard_training_image_1000x1000_29.png']
-
